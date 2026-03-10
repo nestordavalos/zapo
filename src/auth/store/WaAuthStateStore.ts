@@ -2,10 +2,10 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import type { AppStateCollectionName, WaAppStateStoreData } from '../../appstate/types'
-import type { WaAuthCredentials } from '../../auth/types'
 import { proto } from '../../proto'
 import { base64ToBytes, bytesToBase64 } from '../../util/base64'
 import { cloneBytes } from '../../util/bytes'
+import type { WaAuthCredentials } from '../types'
 
 import type {
     SerializedAppStateCollection,

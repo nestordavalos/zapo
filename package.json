@@ -4,6 +4,59 @@
     "description": "High-performance WhatsApp Web TypeScript library",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "require": "./dist/index.js",
+            "default": "./dist/index.js"
+        },
+        "./client": {
+            "types": "./dist/client/index.d.ts",
+            "require": "./dist/client/index.js",
+            "default": "./dist/client/index.js"
+        },
+        "./appstate": {
+            "types": "./dist/appstate/index.d.ts",
+            "require": "./dist/appstate/index.js",
+            "default": "./dist/appstate/index.js"
+        },
+        "./auth": {
+            "types": "./dist/auth/index.d.ts",
+            "require": "./dist/auth/index.js",
+            "default": "./dist/auth/index.js"
+        },
+        "./crypto": {
+            "types": "./dist/crypto/index.d.ts",
+            "require": "./dist/crypto/index.js",
+            "default": "./dist/crypto/index.js"
+        },
+        "./media": {
+            "types": "./dist/media/index.d.ts",
+            "require": "./dist/media/index.js",
+            "default": "./dist/media/index.js"
+        },
+        "./message": {
+            "types": "./dist/message/index.d.ts",
+            "require": "./dist/message/index.js",
+            "default": "./dist/message/index.js"
+        },
+        "./signal": {
+            "types": "./dist/signal/index.d.ts",
+            "require": "./dist/signal/index.js",
+            "default": "./dist/signal/index.js"
+        },
+        "./transport": {
+            "types": "./dist/transport/index.d.ts",
+            "require": "./dist/transport/index.js",
+            "default": "./dist/transport/index.js"
+        },
+        "./proto": {
+            "types": "./dist/proto.d.ts",
+            "require": "./dist/proto.js",
+            "default": "./dist/proto.js"
+        },
+        "./package.json": "./package.json"
+    },
     "files": [
         "dist",
         "proto/index.js",

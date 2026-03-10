@@ -1,5 +1,10 @@
-import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../../auth/types'
-import type { SignalAddress, SignalSessionRecord } from '../../signal/types'
+import type {
+    PreKeyRecord,
+    RegistrationInfo,
+    SignalAddress,
+    SignalSessionRecord,
+    SignedPreKeyRecord
+} from '../../signal/types'
 
 export class WaSignalStore {
     private registrationInfo: RegistrationInfo | null

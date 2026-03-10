@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 
-import { ConsoleLogger } from '../../infra/log/Logger'
+import { ConsoleLogger } from '../../infra/log/ConsoleLogger'
 import type { Logger } from '../../infra/log/types'
 import type { BinaryNode } from '../../transport/types'
 import { toError } from '../../util/errors'

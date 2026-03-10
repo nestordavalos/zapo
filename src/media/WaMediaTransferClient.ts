@@ -11,6 +11,7 @@ import type {
     WaEncryptedDownloadRequest,
     WaEncryptedUploadRequest,
     WaEncryptedUploadResult,
+    WaMediaCryptoLike,
     WaMediaTransferClientOptions,
     WaStreamDownloadRequest,
     WaStreamTransferResponse,
@@ -26,7 +27,7 @@ export class WaMediaTransferClient {
     private readonly defaultHosts: readonly string[]
     private readonly defaultTimeoutMs: number
     private readonly defaultHeaders: Readonly<Record<string, string>>
-    private readonly mediaCrypto: WaMediaCrypto
+    private readonly mediaCrypto: WaMediaCryptoLike
 
     public constructor(options: WaMediaTransferClientOptions = {}) {
         this.logger = options.logger

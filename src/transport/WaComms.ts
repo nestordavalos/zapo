@@ -1,4 +1,4 @@
-import { ConsoleLogger } from '../infra/log/Logger'
+import { ConsoleLogger } from '../infra/log/ConsoleLogger'
 import type { Logger } from '../infra/log/types'
 import { bytesToBase64UrlSafe } from '../util/base64'
 import { toError } from '../util/errors'

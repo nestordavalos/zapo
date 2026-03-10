@@ -1,41 +1,13 @@
 import type { WaAppStateStoreData } from '../appstate/types'
-import type { X25519 } from '../crypto/curves/X25519'
-import type { Logger } from '../infra/log/types'
+import type { SignalKeyPair } from '../crypto/curves/types'
 import type { Proto } from '../proto'
-import type { WaAdvSignature } from '../signal/crypto/WaAdvSignature'
-import type { WaSignalStore } from '../signal/store/WaSignalStore'
-import type { BinaryNode } from '../transport/types'
-
-import type { WaPairingCodeCrypto } from './pairing/WaPairingCodeCrypto'
+import type { RegistrationInfo, SignedPreKeyRecord } from '../signal/types'
 
 export type AdvDeviceIdentity = Proto.IADVDeviceIdentity
 export type AdvSignedDeviceIdentity = Proto.IADVSignedDeviceIdentity
 export type AdvKeyIndexList = Proto.IADVKeyIndexList
 export type ClientPayload = Proto.IClientPayload
 export type HandshakeMessage = Proto.IHandshakeMessage
-
-export interface SignalKeyPair {
-    readonly pubKey: Uint8Array
-    readonly privKey: Uint8Array
-}
-
-export interface RegistrationInfo {
-    readonly registrationId: number
-    readonly identityKeyPair: SignalKeyPair
-}
-
-export interface PreKeyRecord {
-    readonly keyId: number
-    readonly keyPair: SignalKeyPair
-    readonly uploaded?: boolean
-}
-
-export interface SignedPreKeyRecord {
-    readonly keyId: number
-    readonly keyPair: SignalKeyPair
-    readonly signature: Uint8Array
-    readonly uploaded?: boolean
-}
 
 export interface AuthState {
     readonly noiseKeyPair: SignalKeyPair
@@ -80,30 +52,6 @@ export interface WaAuthState {
     readonly registered: boolean
     readonly hasQr: boolean
     readonly hasPairingCode: boolean
-}
-
-export interface WaAuthClientOptions {
-    readonly authPath: string
-    readonly devicePlatform?: string
-}
-
-export interface WaAuthClientCallbacks {
-    readonly onQr?: (qr: string, ttlMs: number) => void
-    readonly onPairingCode?: (code: string) => void
-    readonly onPairingRefresh?: (forceManual: boolean) => void
-    readonly onPaired?: (credentials: WaAuthCredentials) => void
-    readonly onError?: (error: Error) => void
-}
-
-export interface WaAuthClientDependencies {
-    readonly logger: Logger
-    readonly signalStore: WaSignalStore
-    readonly x25519: X25519
-    readonly pairingCrypto: WaPairingCodeCrypto
-    readonly advSignature: WaAdvSignature
-    readonly sendNode: (node: BinaryNode) => Promise<void>
-    readonly query: (node: BinaryNode, timeoutMs?: number) => Promise<BinaryNode>
-    readonly callbacks?: WaAuthClientCallbacks
 }
 
 export interface WaSuccessPersistAttributes {

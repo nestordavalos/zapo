@@ -1,4 +1,3 @@
-import type { WaAuthCredentials } from '../../auth/types'
 import { randomBytesAsync } from '../../crypto'
 import type { Logger } from '../../infra/log/types'
 import { WaAdvSignature } from '../../signal/crypto/WaAdvSignature'
@@ -10,7 +9,7 @@ import {
 } from '../../transport/node/helpers'
 import type { BinaryNode } from '../../transport/types'
 import { uint8Equal } from '../../util/bytes'
-import { WaPairingCodeCrypto } from '../pairing/WaPairingCodeCrypto'
+import type { WaAuthCredentials } from '../types'
 
 import { IQ_TIMEOUT_MS, PAIRING_CODE_MAX_AGE_SECONDS } from './constants'
 import { parsePhoneJid } from './identity'
@@ -21,8 +20,9 @@ import {
     buildIqResultNode,
     buildNotificationAckNode,
     extractPairDeviceRefs
-} from './pairing.nodes'
+} from './nodes'
 import type { ActivePairingSession } from './types'
+import { WaPairingCodeCrypto } from './WaPairingCodeCrypto'
 import { WaPairingSuccessHandler } from './WaPairingSuccessHandler'
 
 export class WaPairingFlow {

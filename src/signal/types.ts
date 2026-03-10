@@ -1,3 +1,4 @@
+import type { SignalKeyPair } from '../crypto/curves/types'
 import type { Proto } from '../proto'
 
 export type ProtoSignalMessage = Proto.ISignalMessage
@@ -6,6 +7,24 @@ export type ProtoSenderKeyDistributionMessage = Proto.ISenderKeyDistributionMess
 export type ProtoSessionStructure = Proto.ISessionStructure
 
 export type SignalCiphertextType = 'msg' | 'pkmsg' | 'skmsg'
+
+export interface RegistrationInfo {
+    readonly registrationId: number
+    readonly identityKeyPair: SignalKeyPair
+}
+
+export interface PreKeyRecord {
+    readonly keyId: number
+    readonly keyPair: SignalKeyPair
+    readonly uploaded?: boolean
+}
+
+export interface SignedPreKeyRecord {
+    readonly keyId: number
+    readonly keyPair: SignalKeyPair
+    readonly signature: Uint8Array
+    readonly uploaded?: boolean
+}
 
 export interface SignalAddress {
     readonly user: string

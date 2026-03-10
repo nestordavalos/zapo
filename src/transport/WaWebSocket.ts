@@ -1,4 +1,4 @@
-import { ConsoleLogger } from '../infra/log/Logger'
+import { ConsoleLogger } from '../infra/log/ConsoleLogger'
 import type { Logger } from '../infra/log/types'
 import { toBytesView } from '../util/bytes'
 import { toError } from '../util/errors'

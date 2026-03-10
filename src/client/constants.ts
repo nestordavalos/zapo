@@ -35,7 +35,6 @@ export const USYNC_MODE_QUERY = 'query'
 export const USYNC_CONTEXT_NOTIFICATION = 'notification'
 export const GROUPS_XMLNS = 'w:g2'
 export const NEWSLETTER_XMLNS = 'newsletter'
-export const MEDIA_XMLNS = 'w:m'
 export const ABT_XMLNS = 'abt'
 export const ABPROPS_PROTOCOL_VERSION = '1'
 export const MAX_DANGLING_RECEIPTS = 2_048

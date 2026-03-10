@@ -1,8 +1,12 @@
-import type { PreKeyRecord, SignedPreKeyRecord } from '../../auth/types'
 import { readVersionedContent, toSerializedPubKey } from '../../crypto'
 import { proto } from '../../proto'
 import { SIGNAL_MAC_SIZE, SIGNAL_VERSION } from '../../signal/constants'
-import type { ParsedPreKeySignalMessage, ParsedSignalMessage } from '../../signal/types'
+import type {
+    ParsedPreKeySignalMessage,
+    ParsedSignalMessage,
+    PreKeyRecord,
+    SignedPreKeyRecord
+} from '../../signal/types'
 import { toBytesView } from '../../util/bytes'
 import type { WaSignalStore } from '../store/WaSignalStore'
 

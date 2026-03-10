@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto'
 
-import type { SignalKeyPair } from '../../auth/types'
 import { hkdf, randomBytesAsync } from '../../crypto'
+import type { SignalKeyPair } from '../../crypto/curves/types'
 import { X25519 } from '../../crypto/curves/X25519'
 import { concatBytes, toBytesView } from '../../util/bytes'
 

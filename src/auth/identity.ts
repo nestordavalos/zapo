@@ -1,13 +1,3 @@
-import { HOST_DOMAIN } from './constants'
-
-export function parsePhoneJid(input: string): string {
-    const digits = input.replace(/\D+/g, '')
-    if (!digits) {
-        throw new Error('phone number is empty after normalization')
-    }
-    return `${digits}@${HOST_DOMAIN}`
-}
-
 export function getLoginIdentity(meJid: string): {
     readonly username: number
     readonly device: number

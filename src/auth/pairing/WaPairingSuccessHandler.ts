@@ -1,4 +1,3 @@
-import type { WaAuthCredentials } from '../../auth/types'
 import type { Logger } from '../../infra/log/types'
 import { proto } from '../../proto'
 import {
@@ -9,8 +8,9 @@ import { asNodeBytes, findNodeChild } from '../../transport/node/helpers'
 import type { BinaryNode } from '../../transport/types'
 import { decodeProtoBytes } from '../../util/base64'
 import { concatBytes, uint8Equal } from '../../util/bytes'
+import { HOST_DOMAIN } from '../client.constants'
+import type { WaAuthCredentials } from '../types'
 
-import { HOST_DOMAIN } from './constants'
 import type { WaPairingSuccessHandlerOptions } from './types'
 
 export class WaPairingSuccessHandler {

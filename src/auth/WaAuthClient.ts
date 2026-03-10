@@ -4,16 +4,18 @@ import type { BinaryNode } from '../transport/types'
 import { uint8Equal } from '../util/bytes'
 import { toError } from '../util/errors'
 
-import { DEFAULT_DEVICE_PLATFORM } from './flow/constants'
-import type { WaAuthSocketOptions } from './flow/types'
-import { WaAuthCredentialsFlow } from './flow/WaAuthCredentialsFlow'
-import { WaPairingFlow } from './flow/WaPairingFlow'
-import { WaQrFlow } from './flow/WaQrFlow'
-import { WaAuthStateStore } from './store/WaAuthStateStore'
+import { DEFAULT_DEVICE_PLATFORM } from './client.constants'
 import type {
     WaAuthClientCallbacks,
     WaAuthClientDependencies,
     WaAuthClientOptions,
+    WaAuthSocketOptions
+} from './client.types'
+import { WaAuthCredentialsFlow } from './flow/WaAuthCredentialsFlow'
+import { WaPairingFlow } from './pairing/WaPairingFlow'
+import { WaQrFlow } from './pairing/WaQrFlow'
+import { WaAuthStateStore } from './store/WaAuthStateStore'
+import type {
     WaAuthCredentials,
     WaAuthState,
     WaSuccessPersistAttributes

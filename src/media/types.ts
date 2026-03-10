@@ -2,8 +2,6 @@ import type { Readable } from 'node:stream'
 
 import type { Logger } from '../infra/log/types'
 
-import type { WaMediaCrypto } from './WaMediaCrypto'
-
 export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker'
 export type MediaCryptoType = MediaKind | 'ptt' | 'gif' | 'ptv' | 'history' | 'md-app-state'
 
@@ -49,6 +47,17 @@ export interface WaStreamTransferResponse {
     readonly body: Readable | null
 }
 
+export interface WaMediaConnHost {
+    readonly hostname: string
+    readonly isFallback: boolean
+}
+
+export interface WaMediaConn {
+    readonly auth: string
+    readonly expiresAtMs: number
+    readonly hosts: readonly WaMediaConnHost[]
+}
+
 export interface WaEncryptedUploadRequest extends WaStreamTransferRequestBase {
     readonly mediaType: MediaCryptoType
     readonly method?: 'POST' | 'PUT'
@@ -85,12 +94,31 @@ export interface WaAbortContext {
     cleanup(): void
 }
 
+export interface WaMediaCryptoLike {
+    generateMediaKey(): Promise<Uint8Array>
+    encryptBytes(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array,
+        plaintext: Uint8Array
+    ): Promise<WaMediaEncryptionResult>
+    encryptReadable(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array,
+        plaintext: Readable
+    ): Promise<WaMediaReadableEncryptionResult>
+    decryptReadable(
+        encrypted: Readable,
+        options: WaMediaDecryptReadableOptions
+    ): Promise<WaMediaReadableDecryptionResult>
+    encryptedLength(plaintextLength: number): number
+}
+
 export interface WaMediaTransferClientOptions {
     readonly logger?: Logger
     readonly defaultHosts?: readonly string[]
     readonly defaultTimeoutMs?: number
     readonly defaultHeaders?: Readonly<Record<string, string>>
-    readonly mediaCrypto?: WaMediaCrypto
+    readonly mediaCrypto?: WaMediaCryptoLike
 }
 
 export interface WaMediaDerivedKeys {

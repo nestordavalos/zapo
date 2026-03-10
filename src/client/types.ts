@@ -1,5 +1,5 @@
-import type { WaAuthSocketOptions } from '../auth/flow/types'
-import type { WaAuthClientOptions, WaAuthCredentials } from '../auth/types'
+import type { WaAuthClientOptions, WaAuthSocketOptions } from '../auth/client.types'
+import type { WaAuthCredentials } from '../auth/types'
 import type { WaMessagePublishOptions } from '../message/types'
 import type { BinaryNode } from '../transport/types'
 
@@ -20,32 +20,6 @@ export interface WaSendMessageOptions extends WaMessagePublishOptions {
     readonly expectedIdentity?: Uint8Array
 }
 
-export interface WaMediaConnHost {
-    readonly hostname: string
-    readonly isFallback: boolean
-}
-
-export interface WaMediaConn {
-    readonly auth: string
-    readonly expiresAtMs: number
-    readonly hosts: readonly WaMediaConnHost[]
-}
-
-export interface WaDirtyBit {
-    readonly type: string
-    readonly timestamp: number
-    readonly protocols: readonly string[]
-}
-
-export type WaStreamControlNodeResult =
-    | { readonly kind: 'xmlstreamend' }
-    | { readonly kind: 'stream_error_code'; readonly code: number }
-    | { readonly kind: 'stream_error_replaced' }
-    | { readonly kind: 'stream_error_device_removed' }
-    | { readonly kind: 'stream_error_ack'; readonly id?: string }
-    | { readonly kind: 'stream_error_xml_not_well_formed' }
-    | { readonly kind: 'stream_error_other' }
-
 export interface WaClientEventMap {
     readonly qr: (qr: string, ttlMs: number) => void
     readonly pairing_code: (code: string) => void
@@ -63,3 +37,6 @@ export interface WaClientEventMap {
 }
 
 export type { WaSendMediaType, WaSendMediaData, WaSendMediaMessage, WaSendMessageContent } from '../message/types'
+export type { WaMediaConn, WaMediaConnHost } from '../media/types'
+export type { WaDirtyBit } from './sync/types'
+export type { WaStreamControlNodeResult } from '../transport/stream/types'

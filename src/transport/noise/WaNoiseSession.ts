@@ -1,6 +1,6 @@
-import type { SignalKeyPair } from '../../auth/types'
 import { X25519 } from '../../crypto'
-import { ConsoleLogger } from '../../infra/log/Logger'
+import type { SignalKeyPair } from '../../crypto/curves/types'
+import { ConsoleLogger } from '../../infra/log/ConsoleLogger'
 import type { Logger } from '../../infra/log/types'
 import { BoundedTaskQueue } from '../../infra/perf/BoundedTaskQueue'
 import { proto } from '../../proto'

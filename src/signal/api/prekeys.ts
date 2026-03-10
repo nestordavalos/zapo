@@ -1,12 +1,13 @@
-import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../auth/types'
+import { buildIqNode, parseIqError } from '../../transport/node/query'
+import type { BinaryNode } from '../../transport/types'
+import { toBytesView } from '../../util/bytes'
+import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../types'
+
 import {
     SIGNAL_FETCH_KEY_BUNDLES_HOST,
     SIGNAL_FETCH_KEY_BUNDLES_XMLNS,
     SIGNAL_KEY_BUNDLE_TYPE_BYTES
-} from '../signal/api/constants'
-import { buildIqNode, parseIqError } from '../transport/node/query'
-import type { BinaryNode } from '../transport/types'
-import { toBytesView } from '../util/bytes'
+} from './constants'
 
 export function intToBigEndianBytes(value: number, byteLength: number): Uint8Array {
     if (!Number.isSafeInteger(value) || value < 0) {

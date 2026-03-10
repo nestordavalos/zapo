@@ -1,5 +1,5 @@
-import type { RegistrationInfo, SignedPreKeyRecord } from '../../auth/types'
 import type { Proto } from '../../proto'
+import type { RegistrationInfo, SignedPreKeyRecord } from '../../signal/types'
 
 export interface ParsedNoiseCertificate {
     readonly serial: number

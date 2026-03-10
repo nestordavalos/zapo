@@ -5,7 +5,8 @@ export {
     generateRegistrationId,
     generateRegistrationInfo,
     generateSignedPreKey
-} from './api/utils'
+} from './registration/keygen'
+export { buildPreKeyUploadIq, parsePreKeyUploadFailure } from './api/prekeys'
 export { SignalSessionSyncApi } from './api/SignalSessionSyncApi'
 export {
     ADV_PREFIX_ACCOUNT_SIGNATURE,

@@ -1,9 +1,9 @@
 import { randomInt } from 'node:crypto'
 
-import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../../auth/types'
 import { toSerializedPubKey } from '../../crypto/core/keys'
 import type { X25519 } from '../../crypto/curves/X25519'
 import type { WaAdvSignature } from '../crypto/WaAdvSignature'
+import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../types'
 
 export async function generateRegistrationInfo(x25519: X25519): Promise<RegistrationInfo> {
     return {

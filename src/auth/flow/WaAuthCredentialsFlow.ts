@@ -1,18 +1,17 @@
-import type { WaAuthCredentials } from '../../auth/types'
 import { randomBytesAsync } from '../../crypto'
 import { toSerializedPubKey } from '../../crypto/core/keys'
 import { X25519 } from '../../crypto/curves/X25519'
 import type { Logger } from '../../infra/log/types'
-import { generatePreKeyPair, generateRegistrationInfo, generateSignedPreKey } from '../../signal/api/utils'
 import { WaAdvSignature } from '../../signal/crypto/WaAdvSignature'
+import { generatePreKeyPair, generateRegistrationInfo, generateSignedPreKey } from '../../signal/registration/keygen'
 import { createAndStoreInitialKeys } from '../../signal/registration/utils'
 import { WaSignalStore } from '../../signal/store/WaSignalStore'
 import type { WaCommsConfig } from '../../transport/types'
 import { toError } from '../../util/errors'
+import type { WaAuthSocketOptions } from '../client.types'
+import { getLoginIdentity } from '../identity'
 import { WaAuthStateStore } from '../store/WaAuthStateStore'
-
-import { getLoginIdentity } from './identity'
-import type { WaAuthSocketOptions } from './types'
+import type { WaAuthCredentials } from '../types'
 
 export class WaAuthCredentialsFlow {
     private readonly logger: Logger

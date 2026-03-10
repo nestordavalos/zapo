@@ -1,11 +1,10 @@
 import { webcrypto } from 'node:crypto'
 
-import type { SignalKeyPair } from '../../auth/types'
 import { toBytesView } from '../../util/bytes'
 import { assert32, decodeBase64Url } from '../core/encoding'
 
 import { X25519_PKCS8_PREFIX } from './constants'
-import type { SubtleKeyPair } from './types'
+import type { SignalKeyPair, SubtleKeyPair } from './types'
 
 export class X25519 {
     public async generateKeyPair(): Promise<SignalKeyPair> {

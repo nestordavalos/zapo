@@ -1,4 +1,4 @@
-import type { SignalKeyPair } from '../auth/types'
+import type { SignalKeyPair } from '../crypto/curves/types'
 
 import type { WaLoginPayloadConfig, WaRegistrationPayloadConfig } from './noise/types'
 

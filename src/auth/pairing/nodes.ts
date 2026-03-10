@@ -1,7 +1,6 @@
 import { asNodeBytes, getNodeChildrenByTag } from '../../transport/node/helpers'
 import type { BinaryNode } from '../../transport/types'
-
-import { HOST_DOMAIN } from './constants'
+import { HOST_DOMAIN } from '../client.constants'
 
 const TEXT_DECODER = new TextDecoder()
 const ZERO_BYTE = new Uint8Array([0])

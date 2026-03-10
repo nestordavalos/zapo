@@ -1,6 +1,6 @@
-import type { WaAuthCredentials } from '../../auth/types'
 import type { Logger } from '../../infra/log/types'
 import { bytesToBase64 } from '../../util/base64'
+import type { WaAuthCredentials } from '../types'
 
 import { QR_INITIAL_TTL_MS, QR_ROTATION_TTL_MS } from './constants'
 

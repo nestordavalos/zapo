@@ -1,12 +1,12 @@
 import { webcrypto } from 'node:crypto'
 
-import type { SignalKeyPair } from '../../auth/types'
 import { importHmacKey, hmacSign, randomBytesAsync, sha512 } from '../../crypto'
 import {
     clampCurvePrivateKey,
     montgomeryToEdwardsPublic,
     rawCurvePublicKey
 } from '../../crypto/curves/curve25519'
+import type { SignalKeyPair } from '../../crypto/curves/types'
 import { encodeExtendedPoint, scalarMultBase } from '../../crypto/math/edwards'
 import { bytesToBigIntLE, bigIntToBytesLE } from '../../crypto/math/le'
 import { modGroup } from '../../crypto/math/mod'
