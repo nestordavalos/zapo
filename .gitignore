@@ -1,0 +1,7 @@
+dist
+node_modules
+.auth
+example.js
+*.md
+!README.md
+logs.txt

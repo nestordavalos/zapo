@@ -1,0 +1,362 @@
+import {
+    createCipheriv,
+    createDecipheriv,
+    createHash,
+    createHmac
+} from 'node:crypto'
+import { once } from 'node:events'
+import { PassThrough, Readable } from 'node:stream'
+
+import { hkdf } from '../crypto/core/hkdf'
+import {
+    aesCbcDecrypt,
+    aesCbcEncrypt,
+    hmacSign,
+    importAesCbcKey,
+    importHmacKey,
+    sha256
+} from '../crypto/core/primitives'
+import { randomBytesAsync } from '../crypto/core/random'
+import {
+    concatBytes,
+    toBufferChunk,
+    toBufferView,
+    toBytesView,
+    uint8Equal,
+    uint8TimingSafeEqual
+} from '../util/bytes'
+import { toError } from '../util/errors'
+
+import {
+    ENC_KEY_END,
+    ENC_KEY_START,
+    HMAC_TRUNCATED_SIZE,
+    IV_SIZE,
+    MAC_KEY_END,
+    MAC_KEY_START,
+    MEDIA_HKDF_SIZE
+} from './constants'
+import type {
+    MediaCryptoType,
+    WaMediaDecryptReadableOptions,
+    WaMediaDecryptionResult,
+    WaMediaDerivedKeys,
+    WaMediaEncryptionResult,
+    WaMediaReadableDecryptionResult,
+    WaMediaReadableEncryptionResult
+} from './types'
+
+const EMPTY_BYTES = new Uint8Array(0)
+
+export class WaMediaCrypto {
+    public async generateMediaKey(): Promise<Uint8Array> {
+        return randomBytesAsync(32)
+    }
+
+    public async deriveKeys(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array
+    ): Promise<WaMediaDerivedKeys> {
+        if (mediaKey.byteLength !== 32) {
+            throw new Error(`invalid media key length ${mediaKey.byteLength}, expected 32`)
+        }
+        const info = this.mediaTypeToHkdfInfo(mediaType)
+        const expanded = await hkdf(mediaKey, null, info, MEDIA_HKDF_SIZE)
+        return {
+            iv: expanded.subarray(0, IV_SIZE),
+            encKey: expanded.subarray(ENC_KEY_START, ENC_KEY_END),
+            macKey: expanded.subarray(MAC_KEY_START, MAC_KEY_END),
+            refKey: expanded.subarray(MAC_KEY_END, MEDIA_HKDF_SIZE)
+        }
+    }
+
+    public async encryptBytes(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array,
+        plaintext: Uint8Array
+    ): Promise<WaMediaEncryptionResult> {
+        const keys = await this.deriveKeys(mediaType, mediaKey)
+        const aesKey = await importAesCbcKey(keys.encKey)
+        const ciphertext = await aesCbcEncrypt(aesKey, keys.iv, plaintext)
+        const ivCiphertext = concatBytes([keys.iv, ciphertext])
+
+        const macKey = await importHmacKey(keys.macKey)
+        const mac = await hmacSign(macKey, ivCiphertext)
+        const signature = mac.subarray(0, HMAC_TRUNCATED_SIZE)
+        const ciphertextHmac = concatBytes([ciphertext, signature])
+
+        const fileSha256 = await sha256(plaintext)
+        const fileEncSha256 = await sha256(ciphertextHmac)
+        return { ciphertextHmac, fileSha256, fileEncSha256 }
+    }
+
+    public async decryptBytes(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array,
+        ciphertextHmac: Uint8Array,
+        expectedFileSha256?: Uint8Array,
+        expectedFileEncSha256?: Uint8Array
+    ): Promise<WaMediaDecryptionResult> {
+        if (ciphertextHmac.byteLength < HMAC_TRUNCATED_SIZE) {
+            throw new Error(`ciphertext too short: ${ciphertextHmac.byteLength}`)
+        }
+
+        if (expectedFileEncSha256) {
+            const computedEncHash = await sha256(ciphertextHmac)
+            if (!uint8Equal(computedEncHash, expectedFileEncSha256)) {
+                throw new Error('encrypted file hash mismatch')
+            }
+        }
+
+        const keys = await this.deriveKeys(mediaType, mediaKey)
+        const ciphertext = ciphertextHmac.subarray(
+            0,
+            ciphertextHmac.byteLength - HMAC_TRUNCATED_SIZE
+        )
+        const expectedMac = ciphertextHmac.subarray(ciphertextHmac.byteLength - HMAC_TRUNCATED_SIZE)
+        const ivCiphertext = concatBytes([keys.iv, ciphertext])
+
+        const macKey = await importHmacKey(keys.macKey)
+        const mac = await hmacSign(macKey, ivCiphertext)
+        const signature = mac.subarray(0, HMAC_TRUNCATED_SIZE)
+        if (!uint8TimingSafeEqual(signature, expectedMac)) {
+            throw new Error('media MAC mismatch')
+        }
+
+        const aesKey = await importAesCbcKey(keys.encKey)
+        const plaintext = await aesCbcDecrypt(aesKey, keys.iv, ciphertext)
+        const fileSha256 = await sha256(plaintext)
+        if (expectedFileSha256 && !uint8Equal(fileSha256, expectedFileSha256)) {
+            throw new Error('plaintext file hash mismatch')
+        }
+
+        const fileEncSha256 = expectedFileEncSha256 ?? (await sha256(ciphertextHmac))
+        return { plaintext, fileSha256, fileEncSha256 }
+    }
+
+    public async encryptReadable(
+        mediaType: MediaCryptoType,
+        mediaKey: Uint8Array,
+        plaintext: Readable
+    ): Promise<WaMediaReadableEncryptionResult> {
+        const keys = await this.deriveKeys(mediaType, mediaKey)
+        const encrypted = new PassThrough()
+        const metadata = this.pumpEncryption(plaintext, encrypted, keys)
+        return { encrypted, metadata }
+    }
+
+    public async decryptReadableToBytes(
+        encrypted: Readable,
+        options: WaMediaDecryptReadableOptions
+    ): Promise<WaMediaDecryptionResult> {
+        const decrypted = await this.decryptReadable(encrypted, options)
+        const plaintext = await this.readAll(decrypted.plaintext)
+        const metadata = await decrypted.metadata
+        return {
+            plaintext,
+            fileSha256: metadata.fileSha256,
+            fileEncSha256: metadata.fileEncSha256
+        }
+    }
+
+    public async decryptReadable(
+        encrypted: Readable,
+        options: WaMediaDecryptReadableOptions
+    ): Promise<WaMediaReadableDecryptionResult> {
+        const keys = await this.deriveKeys(options.mediaType, options.mediaKey)
+        const plaintext = new PassThrough()
+        const metadata = this.pumpDecryption(encrypted, plaintext, keys, options)
+        return { plaintext, metadata }
+    }
+
+    public encryptedLength(plaintextLength: number): number {
+        if (!Number.isFinite(plaintextLength) || plaintextLength < 0) {
+            throw new Error(`invalid plaintext length ${plaintextLength}`)
+        }
+        const paddedLength = Math.ceil((plaintextLength + 1) / 16) * 16
+        return paddedLength + HMAC_TRUNCATED_SIZE
+    }
+
+    private async pumpEncryption(
+        plaintext: Readable,
+        encrypted: PassThrough,
+        keys: WaMediaDerivedKeys
+    ): Promise<{ readonly fileSha256: Uint8Array; readonly fileEncSha256: Uint8Array }> {
+        const plainHash = createHash('sha256')
+        const encHash = createHash('sha256')
+        const hmac = createHmac('sha256', keys.macKey)
+        const cipher = createCipheriv('aes-256-cbc', keys.encKey, keys.iv)
+
+        hmac.update(keys.iv)
+        try {
+            for await (const chunk of plaintext) {
+                const plainChunk = toBufferChunk(chunk)
+                if (plainChunk.byteLength === 0) {
+                    continue
+                }
+                plainHash.update(plainChunk)
+                const encryptedChunk = cipher.update(plainChunk)
+                if (encryptedChunk.byteLength > 0) {
+                    hmac.update(encryptedChunk)
+                    encHash.update(encryptedChunk)
+                    await this.writeChunk(encrypted, encryptedChunk)
+                }
+            }
+
+            const encryptedFinal = cipher.final()
+            if (encryptedFinal.byteLength > 0) {
+                hmac.update(encryptedFinal)
+                encHash.update(encryptedFinal)
+                await this.writeChunk(encrypted, encryptedFinal)
+            }
+
+            const signature = hmac.digest().subarray(0, HMAC_TRUNCATED_SIZE)
+            encHash.update(signature)
+            await this.writeChunk(encrypted, signature)
+            encrypted.end()
+
+            return {
+                fileSha256: toBytesView(plainHash.digest()),
+                fileEncSha256: toBytesView(encHash.digest())
+            }
+        } catch (error) {
+            const normalized = toError(error)
+            encrypted.destroy(normalized)
+            throw normalized
+        }
+    }
+
+    private async pumpDecryption(
+        encrypted: Readable,
+        plaintext: PassThrough,
+        keys: WaMediaDerivedKeys,
+        options: WaMediaDecryptReadableOptions
+    ): Promise<{ readonly fileSha256: Uint8Array; readonly fileEncSha256: Uint8Array }> {
+        const plainHash = createHash('sha256')
+        const encHash = createHash('sha256')
+        const hmac = createHmac('sha256', keys.macKey)
+        const decipher = createDecipheriv('aes-256-cbc', keys.encKey, keys.iv)
+
+        hmac.update(keys.iv)
+        try {
+            let trailing: Uint8Array = EMPTY_BYTES
+            for await (const chunk of encrypted) {
+                const bytes = toBufferChunk(chunk)
+                if (bytes.byteLength === 0) {
+                    continue
+                }
+                encHash.update(bytes)
+                const merged =
+                    trailing.byteLength === 0
+                        ? bytes
+                        : Buffer.concat([toBufferView(trailing), bytes])
+                if (merged.byteLength <= HMAC_TRUNCATED_SIZE) {
+                    trailing = merged
+                    continue
+                }
+
+                const ciphertextChunk = merged.subarray(0, merged.byteLength - HMAC_TRUNCATED_SIZE)
+                trailing = merged.subarray(merged.byteLength - HMAC_TRUNCATED_SIZE)
+                hmac.update(ciphertextChunk)
+                const plainChunk = decipher.update(ciphertextChunk)
+                if (plainChunk.byteLength > 0) {
+                    plainHash.update(plainChunk)
+                    await this.writeChunk(plaintext, plainChunk)
+                }
+            }
+
+            if (trailing.byteLength !== HMAC_TRUNCATED_SIZE) {
+                throw new Error(`ciphertext too short: ${trailing.byteLength}`)
+            }
+
+            const signature = hmac.digest().subarray(0, HMAC_TRUNCATED_SIZE)
+            if (!uint8TimingSafeEqual(signature, trailing)) {
+                throw new Error('media MAC mismatch')
+            }
+
+            const plainFinal = decipher.final()
+            if (plainFinal.byteLength > 0) {
+                plainHash.update(plainFinal)
+                await this.writeChunk(plaintext, plainFinal)
+            }
+
+            const fileSha256 = toBytesView(plainHash.digest())
+            const fileEncSha256 = toBytesView(encHash.digest())
+            if (
+                options.expectedFileEncSha256 &&
+                !uint8Equal(fileEncSha256, options.expectedFileEncSha256)
+            ) {
+                throw new Error('encrypted file hash mismatch')
+            }
+            if (options.expectedFileSha256 && !uint8Equal(fileSha256, options.expectedFileSha256)) {
+                throw new Error('plaintext file hash mismatch')
+            }
+
+            plaintext.end()
+            return { fileSha256, fileEncSha256 }
+        } catch (error) {
+            const normalized = toError(error)
+            plaintext.destroy(normalized)
+            throw normalized
+        }
+    }
+
+    private async readAll(stream: Readable): Promise<Uint8Array> {
+        const chunks: Uint8Array[] = []
+        let total = 0
+        for await (const chunk of stream) {
+            const bytes = toBufferChunk(chunk)
+            chunks.push(bytes)
+            total += bytes.byteLength
+        }
+
+        if (total === 0) {
+            return EMPTY_BYTES
+        }
+        if (chunks.length === 1) {
+            return chunks[0]
+        }
+
+        const merged = new Uint8Array(total)
+        let offset = 0
+        for (const chunk of chunks) {
+            merged.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+        return merged
+    }
+
+    private mediaTypeToHkdfInfo(mediaType: MediaCryptoType): string {
+        switch (mediaType) {
+            case 'audio':
+            case 'ptt':
+                return 'WhatsApp Audio Keys'
+            case 'document':
+                return 'WhatsApp Document Keys'
+            case 'gif':
+            case 'video':
+            case 'ptv':
+                return 'WhatsApp Video Keys'
+            case 'image':
+            case 'sticker':
+                return 'WhatsApp Image Keys'
+            case 'history':
+                return 'WhatsApp History Keys'
+            case 'md-app-state':
+                return 'WhatsApp App State Keys'
+            default:
+                throw new Error(`unsupported media type: ${String(mediaType)}`)
+        }
+    }
+
+    private async writeChunk(stream: PassThrough, chunk: Buffer): Promise<void> {
+        if (chunk.byteLength === 0) {
+            return
+        }
+        if (stream.write(chunk)) {
+            return
+        }
+        await once(stream, 'drain')
+    }
+
+}
