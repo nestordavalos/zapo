@@ -1,4 +1,4 @@
-import { SERIALIZED_PUB_KEY_PREFIX } from './constants'
+import { SERIALIZED_PUB_KEY_PREFIX } from '@crypto/core/constants'
 
 /**
  * Converts a 32-byte raw public key to 33-byte serialized format (with 0x05 prefix)

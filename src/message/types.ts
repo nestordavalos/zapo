@@ -1,6 +1,6 @@
-import type { MediaKind } from '../media/types'
-import type { Proto } from '../proto'
-import type { BinaryNode } from '../transport/types'
+import type { MediaKind } from '@media/types'
+import type { Proto } from '@proto'
+import type { BinaryNode } from '@transport/types'
 
 export interface WaMessagePublishOptions {
     readonly ackTimeoutMs?: number

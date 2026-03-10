@@ -1,21 +1,21 @@
-import type { Logger } from '../infra/log/types'
-import { WA_DEFAULTS, WA_MESSAGE_TAGS, WA_MESSAGE_TYPES } from '../protocol/constants'
-import type { BinaryNode } from '../transport/types'
-import { delay } from '../util/async'
-import { toError } from '../util/primitives'
-
+import type { Logger } from '@infra/log/types'
 import {
     describeAckNode,
     isAckOrReceiptNode,
     isNegativeAckNode,
     isRetryableNegativeAck
-} from './ack'
+} from '@message/ack'
 import type {
     WaEncryptedMessageInput,
     WaMessagePublishOptions,
     WaMessagePublishResult,
     WaSendReceiptInput
-} from './types'
+} from '@message/types'
+import { WA_DEFAULTS, WA_MESSAGE_TAGS, WA_MESSAGE_TYPES } from '@protocol/constants'
+import type { BinaryNode } from '@transport/types'
+import { delay } from '@util/async'
+import { toError } from '@util/primitives'
+
 
 interface WaMessageClientOptions {
     readonly logger: Logger

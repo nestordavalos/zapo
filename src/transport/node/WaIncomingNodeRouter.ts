@@ -1,4 +1,4 @@
-import type { BinaryNode } from '../../transport/types'
+import type { BinaryNode } from '@transport/types'
 
 type IqSetNodeHandler = (node: BinaryNode) => Promise<boolean>
 type NotificationNodeHandler = (node: BinaryNode) => Promise<boolean>

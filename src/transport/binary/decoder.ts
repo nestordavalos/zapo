@@ -1,6 +1,4 @@
-import { WA_DEFAULTS } from '../../protocol/constants'
-import type { BinaryNode } from '../../transport/types'
-
+import { WA_DEFAULTS } from '@protocol/constants'
 import {
     BINARY_20,
     BINARY_32,
@@ -20,8 +18,9 @@ import {
     NIBBLE_8,
     NIBBLE_ALPHABET,
     STREAM_END
-} from './constants'
-import { DICTIONARIES, SINGLE_BYTE_TOKENS } from './tokens'
+} from '@transport/binary/constants'
+import { DICTIONARIES, SINGLE_BYTE_TOKENS } from '@transport/binary/tokens'
+import type { BinaryNode } from '@transport/types'
 
 class ByteReader {
     private readonly data: Uint8Array

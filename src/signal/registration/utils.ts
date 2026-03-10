@@ -1,5 +1,5 @@
-import type { WaSignalStore } from '../store/WaSignalStore'
-import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '../types'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
+import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '@signal/types'
 
 interface RegistrationBundle {
     readonly registrationInfo: RegistrationInfo

@@ -1,19 +1,3 @@
-import { hkdf } from '../crypto/core/hkdf'
-import {
-    aesCbcDecrypt,
-    aesCbcEncrypt,
-    hmacSign,
-    importAesCbcKey,
-    importHmacKey,
-    importHmacSha512Key
-} from '../crypto/core/primitives'
-import { randomBytesAsync } from '../crypto/core/random'
-import { proto } from '../proto'
-import type { Proto } from '../proto'
-import { WA_APP_STATE_KDF_INFO } from '../protocol/constants'
-import { bytesToBase64 } from '../util/base64'
-import { concatBytes, uint8Equal } from '../util/bytes'
-
 import {
     APP_STATE_DERIVED_INDEX_KEY_END,
     APP_STATE_DERIVED_KEY_LENGTH,
@@ -28,8 +12,24 @@ import {
     APP_STATE_TEXT_DECODER,
     APP_STATE_TEXT_ENCODER,
     APP_STATE_VALUE_MAC_LENGTH
-} from './constants'
-import { toNetworkOrder64 } from './utils'
+} from '@appstate/constants'
+import { toNetworkOrder64 } from '@appstate/utils'
+import { hkdf } from '@crypto/core/hkdf'
+import {
+    aesCbcDecrypt,
+    aesCbcEncrypt,
+    hmacSign,
+    importAesCbcKey,
+    importHmacKey,
+    importHmacSha512Key
+} from '@crypto/core/primitives'
+import { randomBytesAsync } from '@crypto/core/random'
+import { proto } from '@proto'
+import type { Proto } from '@proto'
+import { WA_APP_STATE_KDF_INFO } from '@protocol/constants'
+import { bytesToBase64 } from '@util/base64'
+import { concatBytes, uint8Equal } from '@util/bytes'
+
 
 const EMPTY_BYTES = new Uint8Array(0)
 

@@ -1,5 +1,5 @@
-export { WaMediaTransferClient } from './WaMediaTransferClient'
-export { buildMediaConnIq, parseMediaConnResponse } from './conn'
+export { WaMediaTransferClient } from '@media/WaMediaTransferClient'
+export { buildMediaConnIq, parseMediaConnResponse } from '@media/conn'
 export type {
     WaMediaConn,
     WaMediaConnHost,
@@ -9,5 +9,5 @@ export type {
     WaMediaDecryptionResult,
     WaMediaReadableEncryptionResult,
     WaMediaReadableDecryptionResult
-} from './types'
-export { WaMediaCrypto } from './WaMediaCrypto'
+} from '@media/types'
+export { WaMediaCrypto } from '@media/WaMediaCrypto'

@@ -1,17 +1,16 @@
-import { ConsoleLogger } from '../infra/log/ConsoleLogger'
-import type { Logger } from '../infra/log/types'
-import { WA_DEFAULTS } from '../protocol/constants'
-import { bytesToBase64UrlSafe } from '../util/base64'
-import { toError } from '../util/primitives'
-
-import { EMPTY_BYTES } from './noise/constants'
-import { WaNoiseSession } from './noise/WaNoiseSession'
+import { ConsoleLogger } from '@infra/log/ConsoleLogger'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS } from '@protocol/constants'
+import { EMPTY_BYTES } from '@transport/noise/constants'
+import { WaNoiseSession } from '@transport/noise/WaNoiseSession'
 import type {
     SocketCloseInfo,
     WaCommsConfig,
     WaCommsState
-} from './types'
-import { WaWebSocket } from './WaWebSocket'
+} from '@transport/types'
+import { WaWebSocket } from '@transport/WaWebSocket'
+import { bytesToBase64UrlSafe } from '@util/base64'
+import { toError } from '@util/primitives'
 
 interface ConnectionWaiter {
     readonly resolve: () => void

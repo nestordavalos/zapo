@@ -1,6 +1,5 @@
-import type { SignalKeyPair } from '../crypto/curves/types'
-
-import type { WaLoginPayloadConfig, WaRegistrationPayloadConfig } from './noise/types'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import type { WaLoginPayloadConfig, WaRegistrationPayloadConfig } from '@transport/noise/types'
 
 export interface BinaryNode {
     readonly tag: string

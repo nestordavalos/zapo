@@ -1,13 +1,13 @@
 import { Readable } from 'node:stream'
 
-import type { Logger } from '../infra/log/types'
-import { WA_DEFAULTS } from '../protocol/constants'
-import { toBufferChunk } from '../util/bytes'
-import { toError } from '../util/primitives'
+import type { Logger } from '@infra/log/types'
+import { DEFAULT_MEDIA_HOSTS } from '@media/constants'
+import type { MediaCryptoType, WaMediaTransferClientOptions } from '@media/types'
+import { WaMediaCrypto } from '@media/WaMediaCrypto'
+import { WA_DEFAULTS } from '@protocol/constants'
+import { toBufferChunk } from '@util/bytes'
+import { toError } from '@util/primitives'
 
-import { DEFAULT_MEDIA_HOSTS } from './constants'
-import type { MediaCryptoType, WaMediaTransferClientOptions } from './types'
-import { WaMediaCrypto } from './WaMediaCrypto'
 
 const EMPTY_BYTES = new Uint8Array(0)
 

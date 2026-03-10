@@ -1,8 +1,8 @@
 import { webcrypto } from 'node:crypto'
 
-import { buildNonce } from '../../crypto'
-import { EMPTY_AAD } from '../../transport/noise/constants'
-import { toBytesView } from '../../util/bytes'
+import { buildNonce } from '@crypto'
+import { EMPTY_AAD } from '@transport/noise/constants'
+import { toBytesView } from '@util/bytes'
 
 export class WaNoiseSocket {
     private readonly encryptKey: webcrypto.CryptoKey

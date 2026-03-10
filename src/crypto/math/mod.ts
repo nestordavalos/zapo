@@ -1,4 +1,4 @@
-import { FIELD_P, GROUP_L } from './constants'
+import { FIELD_P, GROUP_L } from '@crypto/math/constants'
 export { FIELD_P, GROUP_L }
 
 export function mod(value: bigint, modulus = FIELD_P): bigint {

@@ -1,14 +1,14 @@
-import { readVersionedContent, toSerializedPubKey } from '../../crypto'
-import { proto } from '../../proto'
-import { SIGNAL_MAC_SIZE, SIGNAL_VERSION } from '../../signal/constants'
+import { readVersionedContent, toSerializedPubKey } from '@crypto'
+import { proto } from '@proto'
+import { SIGNAL_MAC_SIZE, SIGNAL_VERSION } from '@signal/constants'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
 import type {
     ParsedPreKeySignalMessage,
     ParsedSignalMessage,
     PreKeyRecord,
     SignedPreKeyRecord
-} from '../../signal/types'
-import { toBytesView } from '../../util/bytes'
-import type { WaSignalStore } from '../store/WaSignalStore'
+} from '@signal/types'
+import { toBytesView } from '@util/bytes'
 
 export function deserializeMsg(versionContentMac: Uint8Array): ParsedSignalMessage {
     const content = readVersionedContent(versionContentMac, SIGNAL_VERSION, SIGNAL_MAC_SIZE)

@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream'
 
-import type { Logger } from '../infra/log/types'
+import type { Logger } from '@infra/log/types'
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker'
 export type MediaCryptoType = MediaKind | 'ptt' | 'gif' | 'ptv' | 'history' | 'md-app-state'

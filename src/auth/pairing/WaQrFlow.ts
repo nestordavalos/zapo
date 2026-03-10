@@ -1,7 +1,7 @@
-import type { Logger } from '../../infra/log/types'
-import { WA_DEFAULTS } from '../../protocol/constants'
-import { bytesToBase64 } from '../../util/base64'
-import type { WaAuthCredentials } from '../types'
+import type { WaAuthCredentials } from '@auth/types'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS } from '@protocol/constants'
+import { bytesToBase64 } from '@util/base64'
 
 export class WaQrFlow {
     private readonly logger: Logger

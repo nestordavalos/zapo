@@ -1,9 +1,9 @@
-import { WA_DEFAULTS } from '../../protocol/constants'
+import { WA_DEFAULTS } from '@protocol/constants'
 import type {
     SenderKeyDistributionRecord,
     SenderKeyRecord,
     SignalAddress
-} from '../../signal/types'
+} from '@signal/types'
 
 export class SenderKeyStore {
     private readonly senderKeys: Map<string, SenderKeyRecord>

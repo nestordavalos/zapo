@@ -1,2 +1,2 @@
-export { WaMessageClient } from './WaMessageClient'
-export * from './types'
+export { WaMessageClient } from '@message/WaMessageClient'
+export * from '@message/types'

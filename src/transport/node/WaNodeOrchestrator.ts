@@ -1,8 +1,8 @@
-import { randomBytesAsync } from '../../crypto'
-import type { Logger } from '../../infra/log/types'
-import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '../../protocol/constants'
-import { toError } from '../../util/primitives'
-import type { BinaryNode } from '../types'
+import { randomBytesAsync } from '@crypto'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import type { BinaryNode } from '@transport/types'
+import { toError } from '@util/primitives'
 
 interface PendingNodeQuery {
     readonly resolve: (value: BinaryNode) => void

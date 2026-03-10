@@ -1,4 +1,4 @@
-import { toBytesView } from '../../util/bytes'
+import { toBytesView } from '@util/bytes'
 
 /**
  * Base64 URL encoding utilities

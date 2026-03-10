@@ -1,4 +1,4 @@
-import type { SignalKeyPair } from '../crypto/curves/types'
+import type { SignalKeyPair } from '@crypto/curves/types'
 
 export interface RegistrationInfo {
     readonly registrationId: number

@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events'
 
-import { ConsoleLogger } from '../../infra/log/ConsoleLogger'
-import type { Logger } from '../../infra/log/types'
-import type { BinaryNode } from '../../transport/types'
-import { toError } from '../../util/primitives'
-import { decodeBinaryNodeStanza, encodeBinaryNodeStanza } from '../binary'
-import type { WaComms } from '../WaComms'
+import { ConsoleLogger } from '@infra/log/ConsoleLogger'
+import type { Logger } from '@infra/log/types'
+import { decodeBinaryNodeStanza, encodeBinaryNodeStanza } from '@transport/binary'
+import type { BinaryNode } from '@transport/types'
+import type { WaComms } from '@transport/WaComms'
+import { toError } from '@util/primitives'
 
 interface NodeTransportEventMap {
     readonly frame_in: (frame: Uint8Array) => void

@@ -1,4 +1,4 @@
-import type { LogLevel, Logger } from './types'
+import type { LogLevel, Logger } from '@infra/log/types'
 
 const LOG_LEVEL_PRIORITY: Readonly<Record<LogLevel, number>> = {
     trace: 10,

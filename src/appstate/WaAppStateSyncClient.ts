@@ -1,28 +1,7 @@
-import type { Logger } from '../infra/log/types'
-import { proto } from '../proto'
-import type { Proto } from '../proto'
-import {
-    WA_APP_STATE_COLLECTION_STATES,
-    WA_APP_STATE_ERROR_CODES,
-    WA_DEFAULTS,
-    WA_IQ_TYPES,
-    WA_NODE_TAGS,
-    WA_XMLNS
-} from '../protocol/constants'
-import {
-    decodeBinaryNodeContent,
-    findNodeChild,
-    getNodeChildrenByTag
-} from '../transport/node/helpers'
-import type { BinaryNode } from '../transport/types'
-import { decodeProtoBytes } from '../util/base64'
-import { cloneBytes, uint8Equal } from '../util/bytes'
-import { longToNumber } from '../util/primitives'
-
 import {
     APP_STATE_DEFAULT_COLLECTIONS,
     APP_STATE_EMPTY_LT_HASH
-} from './constants'
+} from '@appstate/constants'
 import type {
     AppStateCollectionName,
     AppStateCollectionState,
@@ -33,10 +12,31 @@ import type {
     WaAppStateStoreData,
     WaAppStateSyncResult,
     WaAppStateSyncKey
-} from './types'
-import { keyIdToHex, parseCollectionName } from './utils'
-import { WaAppStateCrypto } from './WaAppStateCrypto'
-import { WaAppStateState } from './WaAppStateState'
+} from '@appstate/types'
+import { keyIdToHex, parseCollectionName } from '@appstate/utils'
+import { WaAppStateCrypto } from '@appstate/WaAppStateCrypto'
+import { WaAppStateState } from '@appstate/WaAppStateState'
+import type { Logger } from '@infra/log/types'
+import { proto } from '@proto'
+import type { Proto } from '@proto'
+import {
+    WA_APP_STATE_COLLECTION_STATES,
+    WA_APP_STATE_ERROR_CODES,
+    WA_DEFAULTS,
+    WA_IQ_TYPES,
+    WA_NODE_TAGS,
+    WA_XMLNS
+} from '@protocol/constants'
+import {
+    decodeBinaryNodeContent,
+    findNodeChild,
+    getNodeChildrenByTag
+} from '@transport/node/helpers'
+import type { BinaryNode } from '@transport/types'
+import { decodeProtoBytes } from '@util/base64'
+import { cloneBytes, uint8Equal } from '@util/bytes'
+import { longToNumber } from '@util/primitives'
+
 
 class WaAppStateMissingKeyError extends Error {
     public constructor(message: string) {

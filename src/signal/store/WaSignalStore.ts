@@ -1,11 +1,11 @@
-import { WA_DEFAULTS } from '../../protocol/constants'
+import { WA_DEFAULTS } from '@protocol/constants'
 import type {
     PreKeyRecord,
     RegistrationInfo,
     SignalAddress,
     SignalSessionRecord,
     SignedPreKeyRecord
-} from '../../signal/types'
+} from '@signal/types'
 
 export class WaSignalStore {
     private registrationInfo: RegistrationInfo | null

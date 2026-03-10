@@ -1,27 +1,26 @@
-import type { WaAuthCredentials } from '../../auth/types'
-import { randomBytesAsync } from '../../crypto'
-import type { Logger } from '../../infra/log/types'
+import type { WaAuthCredentials } from '@auth/types'
+import { randomBytesAsync } from '@crypto'
+import type { Logger } from '@infra/log/types'
 import {
+    WA_ACCOUNT_SYNC_PROTOCOLS,
     WA_DEFAULTS,
     WA_DIRTY_PROTOCOLS,
     WA_DIRTY_TYPES,
-    WA_SUPPORTED_DIRTY_TYPES,
-    WA_XMLNS
-} from '../../protocol/constants'
-import { getNodeChildren } from '../../transport/node/helpers'
-import { assertIqResult, buildIqNode } from '../../transport/node/query'
-import type { BinaryNode } from '../../transport/types'
-import { toError } from '../../util/primitives'
-
+    WA_SUPPORTED_DIRTY_TYPES
+} from '@protocol/constants'
 import {
     buildAccountBlocklistSyncIq,
     buildAccountDevicesSyncIq,
     buildAccountPictureSyncIq,
     buildAccountPrivacySyncIq,
+    buildClearDirtyBitsIq,
     buildGroupsDirtySyncIq,
-    buildNewsletterMetadataSyncIq,
-    resolveAccountSyncProtocols
-} from './account'
+    buildNewsletterMetadataSyncIq
+} from '@transport/node/builders/accountSync'
+import { getNodeChildren } from '@transport/node/helpers'
+import { assertIqResult } from '@transport/node/query'
+import type { BinaryNode } from '@transport/types'
+import { toError } from '@util/primitives'
 
 export interface WaDirtyBit {
     readonly type: string
@@ -44,6 +43,7 @@ interface WaDirtySyncRuntime {
 type DirtyBitHandler = (runtime: WaDirtySyncRuntime, dirtyBit: WaDirtyBit) => Promise<void>
 type AccountSyncHandler = (runtime: WaDirtySyncRuntime) => Promise<void>
 const SUPPORTED_DIRTY_TYPES = new Set<string>(WA_SUPPORTED_DIRTY_TYPES)
+const ACCOUNT_SYNC_PROTOCOL_SET = new Set<string>(WA_ACCOUNT_SYNC_PROTOCOLS)
 
 const DIRTY_BIT_HANDLERS: Readonly<Record<string, DirtyBitHandler>> = {
     [WA_DIRTY_TYPES.ACCOUNT_SYNC]: async (runtime, dirtyBit) =>
@@ -99,19 +99,12 @@ export function splitDirtyBitsBySupport(dirtyBits: readonly WaDirtyBit[]): {
     }
 }
 
-export function buildClearDirtyBitsIq(dirtyBits: readonly WaDirtyBit[]): BinaryNode {
-    return buildIqNode(
-        'set',
-        WA_DEFAULTS.HOST_DOMAIN,
-        WA_XMLNS.DIRTY_BITS,
-        dirtyBits.map((dirtyBit) => ({
-            tag: 'clean',
-            attrs: {
-                type: dirtyBit.type,
-                timestamp: `${dirtyBit.timestamp}`
-            }
-        }))
-    )
+function resolveAccountSyncProtocols(protocols: readonly string[]): readonly string[] {
+    const selected = protocols.filter((protocol) => ACCOUNT_SYNC_PROTOCOL_SET.has(protocol))
+    if (selected.length > 0) {
+        return selected
+    }
+    return WA_ACCOUNT_SYNC_PROTOCOLS
 }
 
 export function parseDirtyBits(

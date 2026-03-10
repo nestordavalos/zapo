@@ -1,16 +1,16 @@
 import { webcrypto } from 'node:crypto'
 
-import { hkdf, randomBytesAsync } from '../../crypto'
-import type { SignalKeyPair } from '../../crypto/curves/types'
-import { X25519 } from '../../crypto/curves/X25519'
-import { WA_PAIRING_KDF_INFO } from '../../protocol/constants'
-import { concatBytes, toBytesView } from '../../util/bytes'
-
 import {
     CROCKFORD_ALPHABET,
     PAIRING_TEXT_ENCODER,
     PBKDF2_ITERATIONS
-} from './constants'
+} from '@auth/pairing/constants'
+import { hkdf, randomBytesAsync } from '@crypto'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import { X25519 } from '@crypto/curves/X25519'
+import { WA_PAIRING_KDF_INFO } from '@protocol/constants'
+import { concatBytes, toBytesView } from '@util/bytes'
+
 
 interface CompanionHelloState {
     readonly pairingCode: string

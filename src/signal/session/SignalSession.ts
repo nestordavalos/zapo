@@ -1,5 +1,6 @@
-import { hkdfSplit, toRawPubKey, toSerializedPubKey, X25519 } from '../../crypto'
-import { SIGNAL_PREFIX } from '../../signal/constants'
+import { hkdfSplit, toRawPubKey, toSerializedPubKey, X25519 } from '@crypto'
+import { SIGNAL_PREFIX } from '@signal/constants'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
 import type {
     SignalInitialExchangeInfo,
     SignalMessageKey,
@@ -9,9 +10,8 @@ import type {
     SignalSerializedKeyPair,
     SignalSessionRecord,
     SignalSessionSnapshot
-} from '../../signal/types'
-import { cloneBytes, concatBytes, uint8Equal } from '../../util/bytes'
-import type { WaSignalStore } from '../store/WaSignalStore'
+} from '@signal/types'
+import { cloneBytes, concatBytes, uint8Equal } from '@util/bytes'
 
 interface LocalIdentityContext {
     readonly regId: number

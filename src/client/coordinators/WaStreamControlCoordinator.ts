@@ -1,8 +1,8 @@
-import type { Logger } from '../../infra/log/types'
-import { handleParsedStreamControl } from '../../transport/stream/handlers'
-import type { WaStreamControlNodeResult } from '../../transport/stream/parse'
-import type { WaComms } from '../../transport/WaComms'
-import { toError } from '../../util/primitives'
+import type { Logger } from '@infra/log/types'
+import { handleParsedStreamControl } from '@transport/stream/handlers'
+import type { WaStreamControlNodeResult } from '@transport/stream/parse'
+import type { WaComms } from '@transport/WaComms'
+import { toError } from '@util/primitives'
 
 interface WaStreamControlCoordinatorOptions {
     readonly logger: Logger

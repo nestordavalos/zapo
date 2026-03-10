@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import { PassThrough } from 'node:stream'
 import type { Readable } from 'node:stream'
 
-import { hkdf } from '../crypto/core/hkdf'
+import { hkdf } from '@crypto/core/hkdf'
 import {
     aesCbcDecrypt,
     aesCbcEncrypt,
@@ -11,19 +11,8 @@ import {
     importAesCbcKey,
     importHmacKey,
     sha256
-} from '../crypto/core/primitives'
-import { randomBytesAsync } from '../crypto/core/random'
-import { WA_APP_STATE_KEY_TYPES, getWaMediaHkdfInfo } from '../protocol/constants'
-import {
-    concatBytes,
-    toBufferChunk,
-    toBufferView,
-    toBytesView,
-    uint8Equal,
-    uint8TimingSafeEqual
-} from '../util/bytes'
-import { toError } from '../util/primitives'
-
+} from '@crypto/core/primitives'
+import { randomBytesAsync } from '@crypto/core/random'
 import {
     ENC_KEY_END,
     ENC_KEY_START,
@@ -32,7 +21,7 @@ import {
     MAC_KEY_END,
     MAC_KEY_START,
     MEDIA_HKDF_SIZE
-} from './constants'
+} from '@media/constants'
 import type {
     MediaCryptoType,
     WaMediaDecryptReadableOptions,
@@ -41,7 +30,18 @@ import type {
     WaMediaEncryptionResult,
     WaMediaReadableDecryptionResult,
     WaMediaReadableEncryptionResult
-} from './types'
+} from '@media/types'
+import { WA_APP_STATE_KEY_TYPES, getWaMediaHkdfInfo } from '@protocol/constants'
+import {
+    concatBytes,
+    toBufferChunk,
+    toBufferView,
+    toBytesView,
+    uint8Equal,
+    uint8TimingSafeEqual
+} from '@util/bytes'
+import { toError } from '@util/primitives'
+
 
 const EMPTY_BYTES = new Uint8Array(0)
 

@@ -1,4 +1,4 @@
-import { DICTIONARIES, SINGLE_BYTE_TOKENS } from './tokens'
+import { DICTIONARIES, SINGLE_BYTE_TOKENS } from '@transport/binary/tokens'
 
 export const LIST_EMPTY = 0
 export const STREAM_END = 2

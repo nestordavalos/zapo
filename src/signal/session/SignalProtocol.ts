@@ -1,23 +1,13 @@
-import { toSerializedPubKey } from '../../crypto'
-import { MAX_PREV_SESSIONS } from '../../signal/constants'
-import type {
-    ParsedPreKeySignalMessage,
-    ParsedSignalMessage,
-    SignalAddress,
-    SignalPreKeyBundle,
-    SignalSessionRecord
-} from '../../signal/types'
-import { uint8Equal } from '../../util/bytes'
-import type { WaSignalStore } from '../store/WaSignalStore'
-
-import { decryptMsg, decryptMsgFromSession, encryptMsg, calculateRatchet } from './SignalRatchet'
-import type { DecryptOutcome } from './SignalRatchet'
+import { toSerializedPubKey } from '@crypto'
+import { MAX_PREV_SESSIONS } from '@signal/constants'
+import { decryptMsg, decryptMsgFromSession, encryptMsg, calculateRatchet } from '@signal/session/SignalRatchet'
+import type { DecryptOutcome } from '@signal/session/SignalRatchet'
 import {
     deserializeMsg,
     deserializePkMsg,
     requirePreKey,
     requireSignedPreKey
-} from './SignalSerializer'
+} from '@signal/session/SignalSerializer'
 import {
     detachSession,
     ecdh,
@@ -28,7 +18,16 @@ import {
     requireLocalIdentity,
     setPrevSessions,
     toSerializedKeyPair
-} from './SignalSession'
+} from '@signal/session/SignalSession'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
+import type {
+    ParsedPreKeySignalMessage,
+    ParsedSignalMessage,
+    SignalAddress,
+    SignalPreKeyBundle,
+    SignalSessionRecord
+} from '@signal/types'
+import { uint8Equal } from '@util/bytes'
 
 interface SignalCiphertext {
     readonly type: 'msg' | 'pkmsg'

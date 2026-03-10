@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from 'node:crypto'
 
-import { toBytesView } from '../../util/bytes'
+import { toBytesView } from '@util/bytes'
 
 /**
  * Generates cryptographically secure random bytes

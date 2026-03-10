@@ -1,9 +1,9 @@
-import type { Logger } from '../../infra/log/types'
-import { WA_IQ_TYPES, WA_NODE_TAGS } from '../../protocol/constants'
-import { toError } from '../../util/primitives'
-import type { BinaryNode } from '../types'
+import type { Logger } from '@infra/log/types'
+import { WA_IQ_TYPES, WA_NODE_TAGS } from '@protocol/constants'
+import { findNodeChild } from '@transport/node/helpers'
+import type { BinaryNode } from '@transport/types'
+import { toError } from '@util/primitives'
 
-import { findNodeChild } from './helpers'
 
 export function buildIqNode(
     type: 'get' | 'set',

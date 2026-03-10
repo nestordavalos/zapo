@@ -8,8 +8,8 @@ import {
     hmacSign,
     prependVersion,
     toSerializedPubKey
-} from '../../crypto'
-import { proto } from '../../proto'
+} from '@crypto'
+import { proto } from '@proto'
 import {
     CHAIN_KEY_LABEL,
     FUTURE_MESSAGES_MAX,
@@ -17,17 +17,7 @@ import {
     MSG_KEY_LABEL,
     SIGNAL_MAC_SIZE,
     SIGNAL_VERSION
-} from '../../signal/constants'
-import type {
-    ParsedPreKeySignalMessage,
-    ParsedSignalMessage,
-    SignalMessageKey,
-    SignalRecvChain,
-    SignalSerializedKeyPair,
-    SignalSessionRecord
-} from '../../signal/types'
-import { cloneBytes, concatBytes, removeAt, toBytesView, uint8Equal } from '../../util/bytes'
-
+} from '@signal/constants'
 import {
     detachSession,
     ecdh,
@@ -39,7 +29,17 @@ import {
     setPrevSessions,
     snapshotToRecord,
     updateChains
-} from './SignalSession'
+} from '@signal/session/SignalSession'
+import type {
+    ParsedPreKeySignalMessage,
+    ParsedSignalMessage,
+    SignalMessageKey,
+    SignalRecvChain,
+    SignalSerializedKeyPair,
+    SignalSessionRecord
+} from '@signal/types'
+import { cloneBytes, concatBytes, removeAt, toBytesView, uint8Equal } from '@util/bytes'
+
 
 export interface DecryptOutcome {
     readonly updatedSession: SignalSessionRecord

@@ -1,5 +1,5 @@
-import type { Proto } from '../../proto'
-import type { RegistrationInfo, SignedPreKeyRecord } from '../../signal/types'
+import type { Proto } from '@proto'
+import type { RegistrationInfo, SignedPreKeyRecord } from '@signal/types'
 
 export interface WaPayloadCommonConfig {
     readonly passive?: boolean

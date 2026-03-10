@@ -1,5 +1,5 @@
-import type { WaAuthClientOptions, WaAuthCredentials, WaAuthSocketOptions } from '../auth/types'
-import type { BinaryNode } from '../transport/types'
+import type { WaAuthClientOptions, WaAuthCredentials, WaAuthSocketOptions } from '@auth/types'
+import type { BinaryNode } from '@transport/types'
 
 export interface WaClientOptions extends WaAuthClientOptions, WaAuthSocketOptions {}
 

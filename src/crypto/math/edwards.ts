@@ -1,7 +1,7 @@
-import { BASE_POINT, IDENTITY_POINT, TWO_D } from './constants'
-import { bigIntToBytesLE } from './le'
-import { mod, modGroup, modInv } from './mod'
-import type { ExtendedPoint } from './types'
+import { BASE_POINT, IDENTITY_POINT, TWO_D } from '@crypto/math/constants'
+import { bigIntToBytesLE } from '@crypto/math/le'
+import { mod, modGroup, modInv } from '@crypto/math/mod'
+import type { ExtendedPoint } from '@crypto/math/types'
 
 export function addPoint(a: ExtendedPoint, b: ExtendedPoint): ExtendedPoint {
     const y1MinusX1 = mod(a.y - a.x)

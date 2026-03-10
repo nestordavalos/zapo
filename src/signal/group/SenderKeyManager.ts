@@ -1,6 +1,6 @@
 import { webcrypto } from 'node:crypto'
 
-import { Ed25519 } from '../../crypto'
+import { Ed25519 } from '@crypto'
 import {
     hkdfWithBytesInfo,
     toSerializedPubKey,
@@ -9,8 +9,8 @@ import {
     readVersionedContent,
     randomBytesAsync,
     randomIntAsync
-} from '../../crypto'
-import { proto } from '../../proto'
+} from '@crypto'
+import { proto } from '@proto'
 import {
     CHAIN_KEY_LABEL,
     MAX_UNUSED_KEYS,
@@ -19,15 +19,15 @@ import {
     SIGNAL_GROUP_VERSION,
     SIGNATURE_SIZE,
     WHISPER_GROUP_INFO
-} from '../../signal/constants'
+} from '@signal/constants'
+import type { SenderKeyStore } from '@signal/group/SenderKeyStore'
 import type {
     SenderKeyRecord,
     SenderMessageKey,
     SignalAddress
-} from '../../signal/types'
-import { concatBytes, removeAt, toBytesView } from '../../util/bytes'
+} from '@signal/types'
+import { concatBytes, removeAt, toBytesView } from '@util/bytes'
 
-import type { SenderKeyStore } from './SenderKeyStore'
 
 interface ParsedDistributionPayload {
     readonly keyId: number

@@ -1,5 +1,5 @@
-import { toBytesView } from '../../util/bytes'
-import type { BinaryNode } from '../types'
+import type { BinaryNode } from '@transport/types'
+import { toBytesView } from '@util/bytes'
 
 const TEXT_ENCODER = new TextEncoder()
 

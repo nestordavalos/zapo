@@ -1,20 +1,20 @@
-import { randomBytesAsync } from '../../crypto'
-import { toSerializedPubKey } from '../../crypto/core/keys'
-import { X25519 } from '../../crypto/curves/X25519'
-import type { Logger } from '../../infra/log/types'
-import { getLoginIdentity } from '../../protocol/jid'
-import { WaAdvSignature } from '../../signal/crypto/WaAdvSignature'
+import type { WaAuthStateStore } from '@auth/store/WaAuthStateStore'
+import type { WaAuthCredentials, WaAuthSocketOptions } from '@auth/types'
+import { randomBytesAsync } from '@crypto'
+import { toSerializedPubKey } from '@crypto/core/keys'
+import { X25519 } from '@crypto/curves/X25519'
+import type { Logger } from '@infra/log/types'
+import { getLoginIdentity } from '@protocol/jid'
+import { WaAdvSignature } from '@signal/crypto/WaAdvSignature'
 import {
     generatePreKeyPair,
     generateRegistrationInfo,
     generateSignedPreKey
-} from '../../signal/registration/keygen'
-import { createAndStoreInitialKeys } from '../../signal/registration/utils'
-import type { WaSignalStore } from '../../signal/store/WaSignalStore'
-import type { WaCommsConfig } from '../../transport/types'
-import { toError } from '../../util/primitives'
-import type { WaAuthStateStore } from '../store/WaAuthStateStore'
-import type { WaAuthCredentials, WaAuthSocketOptions } from '../types'
+} from '@signal/registration/keygen'
+import { createAndStoreInitialKeys } from '@signal/registration/utils'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
+import type { WaCommsConfig } from '@transport/types'
+import { toError } from '@util/primitives'
 
 interface WaAuthCredentialsFlowArgs {
     readonly logger: Logger

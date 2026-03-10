@@ -1,4 +1,4 @@
-import { toBufferView, toBytesView } from './bytes'
+import { toBufferView, toBytesView } from '@util/bytes'
 
 export function bytesToBase64(value: Uint8Array): string {
     return toBufferView(value).toString('base64')

@@ -1,4 +1,4 @@
-import { concatBytes, toBytesView } from '../../util/bytes'
+import { concatBytes, toBytesView } from '@util/bytes'
 
 const EMPTY_BYTES = new Uint8Array(0)
 

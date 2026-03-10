@@ -4,11 +4,9 @@ import {
     WA_NODE_TAGS,
     WA_SIGNALING,
     WA_XMLNS
-} from '../../protocol/constants'
-import { asNodeBytes, getNodeChildrenByTag } from '../../transport/node/helpers'
-import type { BinaryNode } from '../../transport/types'
+} from '@protocol/constants'
+import type { BinaryNode } from '@transport/types'
 
-const TEXT_DECODER = new TextDecoder()
 const ZERO_BYTE = new Uint8Array([0])
 const NOTIFICATION_CLASS = WA_NODE_TAGS.NOTIFICATION
 
@@ -128,10 +126,7 @@ export function buildCompanionFinishRequestNode(args: {
     }
 }
 
-export function buildNotificationAckNode(
-    node: BinaryNode,
-    typeOverride?: string
-): BinaryNode {
+export function buildNotificationAckNode(node: BinaryNode, typeOverride?: string): BinaryNode {
     const attrs: Record<string, string> = {
         to: node.attrs.from ?? WA_DEFAULTS.HOST_DOMAIN,
         class: NOTIFICATION_CLASS,
@@ -155,10 +150,4 @@ export function buildIqResultNode(iqNode: BinaryNode): BinaryNode {
             type: WA_IQ_TYPES.RESULT
         }
     }
-}
-
-export function extractPairDeviceRefs(pairDeviceNode: BinaryNode): readonly string[] {
-    return getNodeChildrenByTag(pairDeviceNode, WA_NODE_TAGS.REF)
-        .map((child) => TEXT_DECODER.decode(asNodeBytes(child.content, 'pair-device.ref')))
-        .filter((ref) => ref.length > 0)
 }

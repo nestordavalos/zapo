@@ -1,7 +1,6 @@
-import type { Logger } from '../../infra/log/types'
-import { WA_DISCONNECT_REASONS, WA_STREAM_SIGNALING } from '../../protocol/constants'
-
-import type { WaStreamControlNodeResult } from './parse'
+import type { Logger } from '@infra/log/types'
+import { WA_DISCONNECT_REASONS, WA_STREAM_SIGNALING } from '@protocol/constants'
+import type { WaStreamControlNodeResult } from '@transport/stream/parse'
 
 interface StreamControlHandlers {
     readonly logger: Logger

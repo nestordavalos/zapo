@@ -1,9 +1,6 @@
-import { ConsoleLogger } from '../infra/log/ConsoleLogger'
-import type { Logger } from '../infra/log/types'
-import { WA_DEFAULTS, WA_READY_STATES } from '../protocol/constants'
-import { toBytesView } from '../util/bytes'
-import { toError } from '../util/primitives'
-
+import { ConsoleLogger } from '@infra/log/ConsoleLogger'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS, WA_READY_STATES } from '@protocol/constants'
 import type {
     RawWebSocket,
     RawWebSocketConstructor,
@@ -12,7 +9,10 @@ import type {
     WebSocketEventLike,
     WaSocketConfig,
     WaSocketHandlers
-} from './types'
+} from '@transport/types'
+import { toBytesView } from '@util/bytes'
+import { toError } from '@util/primitives'
+
 
 const TEXT_ENCODER = new TextEncoder()
 

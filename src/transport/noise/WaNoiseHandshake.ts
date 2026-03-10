@@ -1,10 +1,10 @@
 import { webcrypto } from 'node:crypto'
 
-import { buildNonce, hkdfSplit64, importAesGcmKey, sha256 } from '../../crypto'
-import { EMPTY_BYTES } from '../../transport/noise/constants'
-import { concatBytes, toBytesView } from '../../util/bytes'
+import { buildNonce, hkdfSplit64, importAesGcmKey, sha256 } from '@crypto'
+import { EMPTY_BYTES } from '@transport/noise/constants'
+import { WaNoiseSocket } from '@transport/noise/WaNoiseSocket'
+import { concatBytes, toBytesView } from '@util/bytes'
 
-import { WaNoiseSocket } from './WaNoiseSocket'
 
 export class WaNoiseHandshake {
     private handshakeHash: Uint8Array

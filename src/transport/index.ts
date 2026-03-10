@@ -9,11 +9,11 @@ export type {
     WaNoiseConfig,
     WaSocketConfig,
     WaSocketHandlers
-} from './types'
-export { WaComms } from './WaComms'
-export { WaWebSocket } from './WaWebSocket'
-export { WaKeepAlive } from './keepalive/WaKeepAlive'
-export { WaIncomingNodeRouter } from './node/WaIncomingNodeRouter'
-export { WaNodeOrchestrator } from './node/WaNodeOrchestrator'
-export { WaNodeTransport } from './node/WaNodeTransport'
-export { assertIqResult, buildIqNode, parseIqError, queryWithContext } from './node/query'
+} from '@transport/types'
+export { WaComms } from '@transport/WaComms'
+export { WaWebSocket } from '@transport/WaWebSocket'
+export { WaKeepAlive } from '@transport/keepalive/WaKeepAlive'
+export { WaIncomingNodeRouter } from '@transport/node/WaIncomingNodeRouter'
+export { WaNodeOrchestrator } from '@transport/node/WaNodeOrchestrator'
+export { WaNodeTransport } from '@transport/node/WaNodeTransport'
+export { assertIqResult, buildIqNode, parseIqError, queryWithContext } from '@transport/node/query'

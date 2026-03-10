@@ -1,6 +1,6 @@
-import type { SignalAddress } from '../signal/types'
+import { WA_DEFAULTS } from '@protocol/constants'
+import type { SignalAddress } from '@signal/types'
 
-import { WA_DEFAULTS } from './constants'
 
 export interface ParsedJid {
     readonly user: string

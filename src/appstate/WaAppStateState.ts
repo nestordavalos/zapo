@@ -1,13 +1,13 @@
-import { cloneBytes, uint8Equal } from '../util/bytes'
 
-import { APP_STATE_EMPTY_LT_HASH } from './constants'
+import { APP_STATE_EMPTY_LT_HASH } from '@appstate/constants'
 import type {
     AppStateCollectionName,
     WaAppStateCollectionVersion,
     WaAppStateStoreData,
     WaAppStateSyncKey
-} from './types'
-import { keyDeviceId, keyEpoch, keyIdToHex } from './utils'
+} from '@appstate/types'
+import { keyDeviceId, keyEpoch, keyIdToHex } from '@appstate/utils'
+import { cloneBytes, uint8Equal } from '@util/bytes'
 
 interface MutableCollectionState {
     version: number

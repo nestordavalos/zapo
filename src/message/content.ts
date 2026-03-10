@@ -1,6 +1,6 @@
-import type { Proto } from '../proto'
+import type { WaSendMediaMessage } from '@message/types'
+import type { Proto } from '@proto'
 
-import type { WaSendMediaMessage } from './types'
 
 export function isSendMediaMessage(content: unknown): content is WaSendMediaMessage {
     if (!content || typeof content !== 'object') {

@@ -27,7 +27,7 @@ export {
     WA_SUPPORTED_DIRTY_TYPES,
     WA_XMLNS,
     getWaMediaHkdfInfo
-} from './constants'
+} from '@protocol/constants'
 export {
     getLoginIdentity,
     isGroupJid,
@@ -35,4 +35,4 @@ export {
     parsePhoneJid,
     parseSignalAddressFromJid,
     splitJid
-} from './jid'
+} from '@protocol/jid'

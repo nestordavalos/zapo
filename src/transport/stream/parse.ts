@@ -1,8 +1,8 @@
-import type { WaSuccessPersistAttributes } from '../../auth/types'
-import { WA_STREAM_SIGNALING } from '../../protocol/constants'
-import { base64ToBytes } from '../../util/base64'
-import { findNodeChild, hasNodeChild } from '../node/helpers'
-import type { BinaryNode } from '../types'
+import type { WaSuccessPersistAttributes } from '@auth/types'
+import { WA_STREAM_SIGNALING } from '@protocol/constants'
+import { findNodeChild, hasNodeChild } from '@transport/node/helpers'
+import type { BinaryNode } from '@transport/types'
+import { base64ToBytes } from '@util/base64'
 
 export type WaStreamControlNodeResult =
     | { readonly kind: 'xmlstreamend' }

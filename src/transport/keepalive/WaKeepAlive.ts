@@ -1,8 +1,8 @@
-import type { Logger } from '../../infra/log/types'
-import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '../../protocol/constants'
-import type { BinaryNode } from '../../transport/types'
-import { toError } from '../../util/primitives'
-import type { WaComms } from '../WaComms'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import type { BinaryNode } from '@transport/types'
+import type { WaComms } from '@transport/WaComms'
+import { toError } from '@util/primitives'
 
 interface WaKeepAliveOptions {
     readonly logger: Logger

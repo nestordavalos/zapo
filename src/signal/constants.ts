@@ -1,4 +1,4 @@
-import { SERIALIZED_PUB_KEY_PREFIX as CORE_SERIALIZED_PUB_KEY_PREFIX } from '../crypto/core/constants'
+import { SERIALIZED_PUB_KEY_PREFIX as CORE_SERIALIZED_PUB_KEY_PREFIX } from '@crypto/core/constants'
 
 const textEncoder = new TextEncoder()
 

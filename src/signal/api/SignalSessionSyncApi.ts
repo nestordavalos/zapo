@@ -1,15 +1,15 @@
-import type { Logger } from '../../infra/log/types'
-import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '../../protocol/constants'
-import { findNodeChild, getNodeChildrenByTag, decodeBinaryNodeContent } from '../../transport/node/helpers'
-import type { BinaryNode } from '../../transport/types'
-import type { SignalPreKeyBundle } from '../types'
-
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
 import {
     SIGNAL_KEY_DATA_LENGTH,
     SIGNAL_KEY_ID_LENGTH,
     SIGNAL_REGISTRATION_ID_LENGTH,
     SIGNAL_SIGNATURE_LENGTH
-} from './constants'
+} from '@signal/api/constants'
+import type { SignalPreKeyBundle } from '@signal/types'
+import { findNodeChild, getNodeChildrenByTag, decodeBinaryNodeContent } from '@transport/node/helpers'
+import type { BinaryNode } from '@transport/types'
+
 
 interface SignalSessionSyncApiOptions {
     readonly logger: Logger

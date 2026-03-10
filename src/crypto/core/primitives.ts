@@ -4,8 +4,8 @@
 
 import { createHash, webcrypto } from 'node:crypto'
 
-import { EMPTY_BYTES } from '../../transport/noise/constants'
-import { toBytesView } from '../../util/bytes'
+import { EMPTY_BYTES } from '@transport/noise/constants'
+import { toBytesView } from '@util/bytes'
 
 // ============================================
 // Hash functions

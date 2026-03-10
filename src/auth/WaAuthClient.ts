@@ -1,25 +1,25 @@
-import type { WaAppStateStoreData } from '../appstate/types'
-import type { Logger } from '../infra/log/types'
-import { WA_DEFAULTS } from '../protocol/constants'
-import type { WaSignalStore } from '../signal/store/WaSignalStore'
-import type { BinaryNode } from '../transport/types'
-import { uint8Equal } from '../util/bytes'
-import { toError } from '../util/primitives'
-
+import type { WaAppStateStoreData } from '@appstate/types'
 import {
     buildCommsConfig,
     loadOrCreateCredentials,
     persistCredentials
-} from './flow/WaAuthCredentialsFlow'
-import { WaPairingFlow } from './pairing/WaPairingFlow'
-import { WaQrFlow } from './pairing/WaQrFlow'
-import { WaAuthStateStore } from './store/WaAuthStateStore'
+} from '@auth/flow/WaAuthCredentialsFlow'
+import { WaPairingFlow } from '@auth/pairing/WaPairingFlow'
+import { WaQrFlow } from '@auth/pairing/WaQrFlow'
+import { WaAuthStateStore } from '@auth/store/WaAuthStateStore'
 import type {
     WaAuthClientOptions,
     WaAuthCredentials,
     WaAuthSocketOptions,
     WaSuccessPersistAttributes
-} from './types'
+} from '@auth/types'
+import type { Logger } from '@infra/log/types'
+import { WA_DEFAULTS } from '@protocol/constants'
+import type { WaSignalStore } from '@signal/store/WaSignalStore'
+import type { BinaryNode } from '@transport/types'
+import { uint8Equal } from '@util/bytes'
+import { toError } from '@util/primitives'
+
 
 interface CredentialsPatchOptions {
     readonly shouldPersist?: (current: WaAuthCredentials, next: WaAuthCredentials) => boolean

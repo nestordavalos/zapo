@@ -1,28 +1,28 @@
-import { toSerializedPubKey } from '../../crypto/core/keys'
-import type { Logger } from '../../infra/log/types'
-import { resolveMessageTypeAttr } from '../../message/content'
+import { toSerializedPubKey } from '@crypto/core/keys'
+import type { Logger } from '@infra/log/types'
+import { resolveMessageTypeAttr } from '@message/content'
 import type {
     WaEncryptedMessageInput,
     WaMessagePublishOptions,
     WaMessagePublishResult,
     WaSendMessageContent,
     WaSendReceiptInput
-} from '../../message/types'
-import type { WaMessageClient } from '../../message/WaMessageClient'
-import { proto } from '../../proto'
-import type { Proto } from '../../proto'
-import { WA_DEFAULTS } from '../../protocol/constants'
+} from '@message/types'
+import type { WaMessageClient } from '@message/WaMessageClient'
+import { proto } from '@proto'
+import type { Proto } from '@proto'
+import { WA_DEFAULTS } from '@protocol/constants'
 import {
     isGroupJid,
     normalizeRecipientJid,
     parseSignalAddressFromJid
-} from '../../protocol/jid'
-import type { SignalSessionSyncApi } from '../../signal/api/SignalSessionSyncApi'
-import type { SenderKeyManager } from '../../signal/group/SenderKeyManager'
-import type { SignalProtocol } from '../../signal/session/SignalProtocol'
-import type { SignalAddress } from '../../signal/types'
-import type { BinaryNode } from '../../transport/types'
-import { uint8Equal } from '../../util/bytes'
+} from '@protocol/jid'
+import type { SignalSessionSyncApi } from '@signal/api/SignalSessionSyncApi'
+import type { SenderKeyManager } from '@signal/group/SenderKeyManager'
+import type { SignalProtocol } from '@signal/session/SignalProtocol'
+import type { SignalAddress } from '@signal/types'
+import type { BinaryNode } from '@transport/types'
+import { uint8Equal } from '@util/bytes'
 
 interface WaSignalMessagePublishInput {
     readonly to: string

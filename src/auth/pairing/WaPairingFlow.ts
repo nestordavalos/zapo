@@ -1,38 +1,37 @@
-import { randomBytesAsync } from '../../crypto'
-import type { SignalKeyPair } from '../../crypto/curves/types'
-import type { Logger } from '../../infra/log/types'
-import { proto } from '../../proto'
-import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_SIGNALING } from '../../protocol/constants'
+import { completeCompanionFinish, createCompanionHello } from '@auth/pairing/WaPairingCodeCrypto'
+import type { WaAuthCredentials } from '@auth/types'
+import { randomBytesAsync } from '@crypto'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import type { Logger } from '@infra/log/types'
+import { proto } from '@proto'
+import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_SIGNALING } from '@protocol/constants'
+import { parsePhoneJid } from '@protocol/jid'
 import {
     ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE,
     WaAdvSignature
-} from '../../signal/crypto/WaAdvSignature'
-import {
-    asNodeBytes,
-    findNodeChild,
-    getFirstNodeChild,
-    hasNodeChild
-} from '../../transport/node/helpers'
-import type { BinaryNode } from '../../transport/types'
-import { decodeProtoBytes } from '../../util/base64'
-import { concatBytes, uint8Equal } from '../../util/bytes'
-import type { WaAuthCredentials } from '../types'
-import { parsePhoneJid } from '../../protocol/jid'
-
+} from '@signal/crypto/WaAdvSignature'
 import {
     buildCompanionFinishRequestNode,
     buildCompanionHelloRequestNode,
     buildGetCountryCodeRequestNode,
     buildIqResultNode,
-    buildNotificationAckNode,
-    extractPairDeviceRefs
-} from './nodes'
+    buildNotificationAckNode
+} from '@transport/node/builders/pairing'
 import {
-    completeCompanionFinish,
-    createCompanionHello
-} from './WaPairingCodeCrypto'
+    asNodeBytes,
+    findNodeChild,
+    getFirstNodeChild,
+    getNodeChildrenByTag,
+    hasNodeChild
+} from '@transport/node/helpers'
+import type { BinaryNode } from '@transport/types'
+import { decodeProtoBytes } from '@util/base64'
+import { concatBytes, uint8Equal } from '@util/bytes'
+
 
 const DEFAULT_BROWSER_DISPLAY_NAME = `${WA_DEFAULTS.DEVICE_BROWSER[0].toUpperCase()}${WA_DEFAULTS.DEVICE_BROWSER.slice(1)}`
+
+const TEXT_DECODER = new TextDecoder()
 
 interface ActivePairingSession {
     readonly ref?: Uint8Array
@@ -156,7 +155,10 @@ export class WaPairingFlow {
 
     public async fetchPairingCountryCodeIso(): Promise<string> {
         this.logger.trace('fetching pairing country code ISO')
-        const response = await this.query(buildGetCountryCodeRequestNode(), WA_DEFAULTS.IQ_TIMEOUT_MS)
+        const response = await this.query(
+            buildGetCountryCodeRequestNode(),
+            WA_DEFAULTS.IQ_TIMEOUT_MS
+        )
         const countryCodeNode = findNodeChild(response, WA_NODE_TAGS.COUNTRY_CODE)
         const iso = countryCodeNode?.attrs.iso
         if (!iso) {
@@ -245,8 +247,14 @@ export class WaPairingFlow {
         return true
     }
 
+    private extractPairDeviceRefs(pairDeviceNode: BinaryNode): readonly string[] {
+        return getNodeChildrenByTag(pairDeviceNode, WA_NODE_TAGS.REF)
+            .map((child) => TEXT_DECODER.decode(asNodeBytes(child.content, 'pair-device.ref')))
+            .filter((ref) => ref.length > 0)
+    }
+
     private async handlePairDevice(iqNode: BinaryNode, pairDeviceNode: BinaryNode): Promise<void> {
-        const refs = extractPairDeviceRefs(pairDeviceNode)
+        const refs = this.extractPairDeviceRefs(pairDeviceNode)
         await this.rotateAdvSecret(this.requireCredentials())
         this.setQrRefs(refs)
         this.logger.info('pair-device refs updated', { refsCount: refs.length })
@@ -407,7 +415,10 @@ export class WaPairingFlow {
         }
 
         const nowSeconds = Math.floor(Date.now() / 1000)
-        if (nowSeconds - pairingSession.createdAtSeconds > WA_DEFAULTS.PAIRING_CODE_MAX_AGE_SECONDS) {
+        if (
+            nowSeconds - pairingSession.createdAtSeconds >
+            WA_DEFAULTS.PAIRING_CODE_MAX_AGE_SECONDS
+        ) {
             throw new Error('primary_hello received for an expired pairing code')
         }
 

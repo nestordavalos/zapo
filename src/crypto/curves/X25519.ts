@@ -1,12 +1,11 @@
 import { webcrypto } from 'node:crypto'
 
-import { toBytesView } from '../../util/bytes'
-import { assert32, decodeBase64Url } from '../core/encoding'
-import { bigIntToBytesLE, bytesToBigIntLE } from '../math/le'
-import { mod, modInv } from '../math/mod'
-
-import { CURVE_P, X25519_PKCS8_PREFIX } from './constants'
-import type { SignalKeyPair } from './types'
+import { assert32, decodeBase64Url } from '@crypto/core/encoding'
+import { CURVE_P, X25519_PKCS8_PREFIX } from '@crypto/curves/constants'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import { bigIntToBytesLE, bytesToBigIntLE } from '@crypto/math/le'
+import { mod, modInv } from '@crypto/math/mod'
+import { toBytesView } from '@util/bytes'
 
 type SubtleKeyPair = {
     privateKey: webcrypto.CryptoKey

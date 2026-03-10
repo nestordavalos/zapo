@@ -1,24 +1,23 @@
-import { X25519 } from '../../crypto'
-import type { SignalKeyPair } from '../../crypto/curves/types'
-import { ConsoleLogger } from '../../infra/log/ConsoleLogger'
-import type { Logger } from '../../infra/log/types'
-import { BoundedTaskQueue } from '../../infra/perf/BoundedTaskQueue'
-import { proto } from '../../proto'
+import { X25519 } from '@crypto'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import { ConsoleLogger } from '@infra/log/ConsoleLogger'
+import type { Logger } from '@infra/log/types'
+import { BoundedTaskQueue } from '@infra/perf/BoundedTaskQueue'
+import { proto } from '@proto'
 import {
     NOISE_IK_NAME,
     NOISE_XX_FALLBACK_NAME,
     NOISE_XX_NAME,
     WA_PROTO_HEADER
-} from '../../transport/noise/constants'
-import type { WaNoiseConfig } from '../../transport/types'
-import { concatBytes, toBytesView } from '../../util/bytes'
-import { toError } from '../../util/primitives'
-
-import { buildLoginPayload, buildRegistrationPayload } from './WaClientPayload'
-import { WaFrameCodec } from './WaFrameCodec'
-import { verifyNoiseCertificateChain } from './WaNoiseCert'
-import { WaNoiseHandshake } from './WaNoiseHandshake'
-import type { WaNoiseSocket } from './WaNoiseSocket'
+} from '@transport/noise/constants'
+import { buildLoginPayload, buildRegistrationPayload } from '@transport/noise/WaClientPayload'
+import { WaFrameCodec } from '@transport/noise/WaFrameCodec'
+import { verifyNoiseCertificateChain } from '@transport/noise/WaNoiseCert'
+import { WaNoiseHandshake } from '@transport/noise/WaNoiseHandshake'
+import type { WaNoiseSocket } from '@transport/noise/WaNoiseSocket'
+import type { WaNoiseConfig } from '@transport/types'
+import { concatBytes, toBytesView } from '@util/bytes'
+import { toError } from '@util/primitives'
 
 function resolvePayload(
     payload: Uint8Array | (() => Uint8Array | Promise<Uint8Array>)

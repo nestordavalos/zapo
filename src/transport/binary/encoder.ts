@@ -1,5 +1,3 @@
-import type { BinaryNode } from '../../transport/types'
-
 import {
     BINARY_20,
     BINARY_32,
@@ -14,7 +12,9 @@ import {
     LIST_EMPTY,
     NIBBLE_8,
     SINGLE_BYTE_TOKEN_MAP
-} from './constants'
+} from '@transport/binary/constants'
+import type { BinaryNode } from '@transport/types'
+
 
 class ByteWriter {
     private buffer: Uint8Array

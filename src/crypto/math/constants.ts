@@ -1,4 +1,4 @@
-import type { ExtendedPoint } from './types'
+import type { ExtendedPoint } from '@crypto/math/types'
 
 export const FIELD_P = (1n << 255n) - 19n
 export const GROUP_L = (1n << 252n) + 27742317777372353535851937790883648493n

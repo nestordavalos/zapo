@@ -1,18 +1,11 @@
-import { WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '../protocol/constants'
-import { findNodeChild, getNodeChildrenByTag } from '../transport/node/helpers'
-import { assertIqResult, buildIqNode } from '../transport/node/query'
-import type { BinaryNode } from '../transport/types'
+import type { WaMediaConn } from '@media/types'
+import { WA_NODE_TAGS } from '@protocol/constants'
+import { buildMediaConnIq } from '@transport/node/builders/media'
+import { findNodeChild, getNodeChildrenByTag } from '@transport/node/helpers'
+import { assertIqResult } from '@transport/node/query'
+import type { BinaryNode } from '@transport/types'
 
-import type { WaMediaConn } from './types'
-
-export function buildMediaConnIq(): BinaryNode {
-    return buildIqNode('set', WA_DEFAULTS.HOST_DOMAIN, WA_XMLNS.MEDIA, [
-        {
-            tag: WA_NODE_TAGS.MEDIA_CONN,
-            attrs: {}
-        }
-    ])
-}
+export { buildMediaConnIq }
 
 export function parseMediaConnResponse(node: BinaryNode, nowMs: number): WaMediaConn {
     assertIqResult(node, 'media_conn')

@@ -1,16 +1,7 @@
-import { WA_ACCOUNT_SYNC_PROTOCOLS, WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '../../protocol/constants'
-import { buildIqNode } from '../../transport/node/query'
-import type { BinaryNode } from '../../transport/types'
+import { WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import { buildIqNode } from '@transport/node/query'
+import type { BinaryNode } from '@transport/types'
 
-const ACCOUNT_SYNC_PROTOCOL_SET = new Set<string>(WA_ACCOUNT_SYNC_PROTOCOLS)
-
-export function resolveAccountSyncProtocols(protocols: readonly string[]): readonly string[] {
-    const selected = protocols.filter((protocol) => ACCOUNT_SYNC_PROTOCOL_SET.has(protocol))
-    if (selected.length > 0) {
-        return selected
-    }
-    return WA_ACCOUNT_SYNC_PROTOCOLS
-}
 
 export function buildAccountDevicesSyncIq(meJid: string, sid: string): BinaryNode {
     return buildIqNode('get', WA_DEFAULTS.HOST_DOMAIN, WA_XMLNS.USYNC, [
@@ -114,4 +105,24 @@ export function buildNewsletterMetadataSyncIq(): BinaryNode {
             }
         }
     ])
+}
+
+export function buildClearDirtyBitsIq(
+    dirtyBits: readonly {
+        readonly type: string
+        readonly timestamp: number
+    }[]
+): BinaryNode {
+    return buildIqNode(
+        'set',
+        WA_DEFAULTS.HOST_DOMAIN,
+        WA_XMLNS.DIRTY_BITS,
+        dirtyBits.map((dirtyBit) => ({
+            tag: 'clean',
+            attrs: {
+                type: dirtyBit.type,
+                timestamp: `${dirtyBit.timestamp}`
+            }
+        }))
+    )
 }

@@ -1,19 +1,19 @@
-import type { WaSuccessPersistAttributes } from '../../auth/types'
-import type { Logger } from '../../infra/log/types'
-import { WA_NODE_TAGS } from '../../protocol/constants'
+import type { WaSuccessPersistAttributes } from '@auth/types'
+import type { WaDirtyBit } from '@client/dirty'
+import type { Logger } from '@infra/log/types'
+import { WA_NODE_TAGS } from '@protocol/constants'
 import {
     decodeBinaryNodeContent,
     findNodeChild,
     getNodeChildrenByTag
-} from '../../transport/node/helpers'
+} from '@transport/node/helpers'
 import {
     parseStreamControlNode,
     parseSuccessPersistAttributes,
     type WaStreamControlNodeResult
-} from '../../transport/stream/parse'
-import type { BinaryNode } from '../../transport/types'
-import { toError } from '../../util/primitives'
-import type { WaDirtyBit } from '../sync/dirty'
+} from '@transport/stream/parse'
+import type { BinaryNode } from '@transport/types'
+import { toError } from '@util/primitives'
 
 interface WaIncomingNodeRuntimePort {
     readonly handleStreamControlResult: (result: WaStreamControlNodeResult) => Promise<void>

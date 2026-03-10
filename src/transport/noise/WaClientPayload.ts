@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto'
 
-import { md5Bytes } from '../../crypto/core/primitives'
-import { proto } from '../../proto'
-import { KEY_TYPE_CURVE25519 } from '../../signal/constants'
-import { DEFAULT_VERSION_BASE } from '../../transport/noise/constants'
-import { toBytesView } from '../../util/bytes'
-
+import { md5Bytes } from '@crypto/core/primitives'
+import { proto } from '@proto'
+import { KEY_TYPE_CURVE25519 } from '@signal/constants'
+import { DEFAULT_VERSION_BASE } from '@transport/noise/constants'
 import type {
     WaLoginPayloadConfig,
     WaPayloadCommonConfig,
     WaRegistrationPayloadConfig
-} from './types'
+} from '@transport/noise/types'
+import { toBytesView } from '@util/bytes'
+
 
 function intToBytes(byteLength: number, value: number): Uint8Array {
     if (!Number.isSafeInteger(value) || value < 0) {

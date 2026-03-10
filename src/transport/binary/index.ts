@@ -1,7 +1,7 @@
-export * from './tokens'
-export * from './encoder'
-export * from './decoder'
+export * from '@transport/binary/tokens'
+export * from '@transport/binary/encoder'
+export * from '@transport/binary/decoder'
 export {
     WAP_DECODE_CONSTANTS as WapDecodeConstants,
     WAP_ENCODE_CONSTANTS as WapEncodeConstants
-} from './constants'
+} from '@transport/binary/constants'

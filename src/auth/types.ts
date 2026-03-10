@@ -1,7 +1,7 @@
-import type { WaAppStateStoreData } from '../appstate/types'
-import type { SignalKeyPair } from '../crypto/curves/types'
-import type { Proto } from '../proto'
-import type { RegistrationInfo, SignedPreKeyRecord } from '../signal/types'
+import type { WaAppStateStoreData } from '@appstate/types'
+import type { SignalKeyPair } from '@crypto/curves/types'
+import type { Proto } from '@proto'
+import type { RegistrationInfo, SignedPreKeyRecord } from '@signal/types'
 
 export interface WaAuthCredentials {
     readonly noiseKeyPair: SignalKeyPair

@@ -1,8 +1,8 @@
 import { webcrypto } from 'node:crypto'
 
-import { toBytesView } from '../../util/bytes'
+import { CORE_TEXT_ENCODER } from '@crypto/core/constants'
+import { toBytesView } from '@util/bytes'
 
-import { CORE_TEXT_ENCODER } from './constants'
 
 const EMPTY_BYTES = new Uint8Array(0)
 

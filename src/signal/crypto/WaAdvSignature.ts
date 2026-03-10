@@ -1,31 +1,31 @@
 import { webcrypto } from 'node:crypto'
 
-import { importHmacKey, hmacSign, randomBytesAsync, sha512 } from '../../crypto'
-import type { SignalKeyPair } from '../../crypto/curves/types'
+import { importHmacKey, hmacSign, randomBytesAsync, sha512 } from '@crypto'
+import type { SignalKeyPair } from '@crypto/curves/types'
 import {
     clampCurvePrivateKey,
     montgomeryToEdwardsPublic,
     rawCurvePublicKey
-} from '../../crypto/curves/X25519'
-import { encodeExtendedPoint, scalarMultBase } from '../../crypto/math/edwards'
-import { bytesToBigIntLE, bigIntToBytesLE } from '../../crypto/math/le'
-import { modGroup } from '../../crypto/math/mod'
-import { concatBytes } from '../../util/bytes'
-
+} from '@crypto/curves/X25519'
+import { encodeExtendedPoint, scalarMultBase } from '@crypto/math/edwards'
+import { bytesToBigIntLE, bigIntToBytesLE } from '@crypto/math/le'
+import { modGroup } from '@crypto/math/mod'
 import {
     ADV_PREFIX_ACCOUNT_SIGNATURE,
     ADV_PREFIX_DEVICE_SIGNATURE,
     ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE,
     ADV_PREFIX_HOSTED_DEVICE_SIGNATURE,
     SIGNAL_PREFIX_SIGNATURE_RANDOM
-} from './constants'
+} from '@signal/crypto/constants'
+import { concatBytes } from '@util/bytes'
+
 
 export {
     ADV_PREFIX_ACCOUNT_SIGNATURE,
     ADV_PREFIX_DEVICE_SIGNATURE,
     ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE,
     ADV_PREFIX_HOSTED_DEVICE_SIGNATURE
-} from './constants'
+} from '@signal/crypto/constants'
 
 export class WaAdvSignature {
     static async verifySignalSignature(

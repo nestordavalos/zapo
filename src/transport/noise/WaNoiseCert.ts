@@ -1,12 +1,12 @@
 import { webcrypto } from 'node:crypto'
 
-import { toSerializedPubKey } from '../../crypto/core/keys'
-import { montgomeryToEdwardsPubKey } from '../../crypto/curves/X25519'
-import { proto } from '../../proto'
-import { ROOT_CA_PUBLIC_KEY_HEX, ROOT_CA_SERIAL } from '../../transport/noise/constants'
-import { decodeProtoBytes } from '../../util/base64'
-import { toBytesView, uint8Equal } from '../../util/bytes'
-import { toSafeNumber } from '../../util/primitives'
+import { toSerializedPubKey } from '@crypto/core/keys'
+import { montgomeryToEdwardsPubKey } from '@crypto/curves/X25519'
+import { proto } from '@proto'
+import { ROOT_CA_PUBLIC_KEY_HEX, ROOT_CA_SERIAL } from '@transport/noise/constants'
+import { decodeProtoBytes } from '@util/base64'
+import { toBytesView, uint8Equal } from '@util/bytes'
+import { toSafeNumber } from '@util/primitives'
 
 interface ParsedNoiseCertificate {
     readonly serial: number
