@@ -282,7 +282,7 @@ export class WaAppStateSqliteStore implements WaAppStateStore {
     private async getConnection(): Promise<WaSqliteConnection> {
         if (!this.connectionPromise) {
             this.connectionPromise = openSqliteConnection(this.options).then((connection) => {
-                return ensureSqliteMigrations(connection).then(() => connection)
+                return ensureSqliteMigrations(connection, ['appState']).then(() => connection)
             })
         }
         return this.connectionPromise

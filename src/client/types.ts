@@ -43,6 +43,7 @@ export interface WaIncomingBaseEvent {
 }
 
 export interface WaIncomingMessageEvent extends WaIncomingBaseEvent {
+    readonly timestamp?: number
     readonly senderJid?: string
     readonly encType?: string
     readonly plaintext?: Uint8Array

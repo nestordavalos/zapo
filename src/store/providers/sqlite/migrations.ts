@@ -1,7 +1,10 @@
 import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 
+type WaSqliteMigrationDomain = 'auth' | 'signal' | 'senderKey' | 'appState' | 'retry'
+
 interface WaSqliteMigration {
     readonly id: string
+    readonly domain: WaSqliteMigrationDomain
     readonly up: (db: WaSqliteConnection) => void
 }
 
@@ -29,7 +32,8 @@ function addColumnIfMissing(
 
 const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
     {
-        id: '0001_core_store_schema',
+        id: '0001_auth_credentials_schema',
+        domain: 'auth',
         up: (db) => {
             db.exec(`
                 CREATE TABLE IF NOT EXISTS auth_credentials (
@@ -59,7 +63,14 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
                     connection_location TEXT,
                     account_creation_ts INTEGER
                 );
-
+            `)
+        }
+    },
+    {
+        id: '0001_signal_schema',
+        domain: 'signal',
+        up: (db) => {
+            db.exec(`
                 CREATE TABLE IF NOT EXISTS signal_meta (
                     session_id TEXT PRIMARY KEY,
                     server_has_prekeys INTEGER NOT NULL DEFAULT 0,
@@ -108,7 +119,14 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
                     identity_key BLOB NOT NULL,
                     PRIMARY KEY (session_id, user, server, device)
                 );
-
+            `)
+        }
+    },
+    {
+        id: '0001_sender_key_schema',
+        domain: 'senderKey',
+        up: (db) => {
+            db.exec(`
                 CREATE TABLE IF NOT EXISTS sender_keys (
                     session_id TEXT NOT NULL,
                     group_id TEXT NOT NULL,
@@ -129,7 +147,14 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
                     timestamp_ms INTEGER NOT NULL,
                     PRIMARY KEY (session_id, group_id, sender_user, sender_server, sender_device)
                 );
-
+            `)
+        }
+    },
+    {
+        id: '0001_appstate_schema',
+        domain: 'appState',
+        up: (db) => {
+            db.exec(`
                 CREATE TABLE IF NOT EXISTS appstate_sync_keys (
                     session_id TEXT NOT NULL,
                     key_id BLOB NOT NULL,
@@ -159,6 +184,7 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
     },
     {
         id: '0002_appstate_syncd_parity_schema',
+        domain: 'appState',
         up: (db) => {
             addColumnIfMissing(db, 'appstate_collection_versions', 'state', 'TEXT')
             addColumnIfMissing(
@@ -251,6 +277,7 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
     },
     {
         id: '0003_retry_message_schema',
+        domain: 'retry',
         up: (db) => {
             db.exec(`
                 CREATE TABLE IF NOT EXISTS retry_outbound_messages (
@@ -321,10 +348,24 @@ function hasMigration(db: WaSqliteConnection, id: string): boolean {
     return !!row
 }
 
-export async function ensureSqliteMigrations(db: WaSqliteConnection): Promise<void> {
+function hasDomain(domainSet: ReadonlySet<WaSqliteMigrationDomain>, migration: WaSqliteMigration): boolean {
+    return domainSet.has(migration.domain)
+}
+
+export async function ensureSqliteMigrations(
+    db: WaSqliteConnection,
+    domains: readonly WaSqliteMigrationDomain[]
+): Promise<void> {
     ensureMigrationTable(db)
+    const domainSet = new Set(domains)
+    if (domainSet.size === 0) {
+        return
+    }
 
     for (const migration of SQLITE_MIGRATIONS) {
+        if (!hasDomain(domainSet, migration)) {
+            continue
+        }
         if (hasMigration(db, migration.id)) {
             continue
         }

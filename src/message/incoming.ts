@@ -45,6 +45,17 @@ function pickMessageChatJid(node: BinaryNode): string | undefined {
     return node.attrs.from
 }
 
+function parseMessageTimestamp(value: string | undefined): number | undefined {
+    if (!value) {
+        return undefined
+    }
+    const parsed = Number.parseInt(value, 10)
+    if (!Number.isFinite(parsed)) {
+        return undefined
+    }
+    return parsed
+}
+
 function buildBaseIncomingEvent(node: BinaryNode): {
     readonly rawNode: BinaryNode
     readonly id?: string
@@ -222,6 +233,7 @@ export async function handleIncomingMessageAck(
                 await maybeProcessSenderKeyDistributionMessage(senderJid, message, options, node)
                 options.emitIncomingMessage?.({
                     ...buildBaseIncomingEvent(node),
+                    timestamp: parseMessageTimestamp(node.attrs.t),
                     senderJid,
                     encType,
                     plaintext: unpaddedPlaintext,
@@ -276,6 +288,7 @@ export async function handleIncomingMessageAck(
                 await maybeProcessSenderKeyDistributionMessage(senderJid, message, options, node)
                 options.emitIncomingMessage?.({
                     ...buildBaseIncomingEvent(node),
+                    timestamp: parseMessageTimestamp(node.attrs.t),
                     senderJid,
                     encType,
                     plaintext: unpaddedPlaintext,

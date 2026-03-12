@@ -226,7 +226,7 @@ export class SenderKeyStore {
     private async getConnection(): Promise<WaSqliteConnection> {
         if (!this.connectionPromise) {
             this.connectionPromise = openSqliteConnection(this.options).then((connection) => {
-                return ensureSqliteMigrations(connection).then(() => connection)
+                return ensureSqliteMigrations(connection, ['senderKey']).then(() => connection)
             })
         }
         return this.connectionPromise

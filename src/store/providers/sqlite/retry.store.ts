@@ -263,7 +263,7 @@ export class WaRetrySqliteStore implements WaRetryStore {
     private async getConnection(): Promise<WaSqliteConnection> {
         if (!this.connectionPromise) {
             this.connectionPromise = openSqliteConnection(this.options).then((connection) => {
-                return ensureSqliteMigrations(connection).then(() => connection)
+                return ensureSqliteMigrations(connection, ['retry']).then(() => connection)
             })
         }
         return this.connectionPromise

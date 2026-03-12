@@ -110,7 +110,7 @@ async function main(): Promise<void> {
         }
         await client.sendMessage(to, {
             extendedTextMessage: {
-                text: 'pong'
+                text: 'pong ' + (Date.now() / 1000 - event.timestamp!).toFixed(3)
             }
         })
         console.log(`[incoming_message] pong enviado para ${to}`)

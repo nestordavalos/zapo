@@ -388,7 +388,7 @@ export class WaSignalStore {
     private async getConnection(): Promise<WaSqliteConnection> {
         if (!this.connectionPromise) {
             this.connectionPromise = openSqliteConnection(this.options).then((connection) => {
-                return ensureSqliteMigrations(connection).then(() => connection)
+                return ensureSqliteMigrations(connection, ['signal']).then(() => connection)
             })
         }
         return this.connectionPromise

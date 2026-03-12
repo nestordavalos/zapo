@@ -225,7 +225,7 @@ export class WaAuthSqliteStore implements WaAuthStore {
     private async getConnection(): Promise<WaSqliteConnection> {
         if (!this.connectionPromise) {
             this.connectionPromise = openSqliteConnection(this.options).then((connection) => {
-                return ensureSqliteMigrations(connection).then(() => connection)
+                return ensureSqliteMigrations(connection, ['auth']).then(() => connection)
             })
         }
         return this.connectionPromise
