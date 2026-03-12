@@ -11,6 +11,7 @@ export type {
     WaAuthStore,
     WaCreateStoreCustomProviders,
     WaCreateStoreOptions,
+    WaRetryStore,
     WaSenderKeyStore,
     WaSignalStore,
     WaSqliteDriver,

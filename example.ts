@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     }
 
     const logger = await createPinoLogger({
-        level: resolveLogLevel('trace'),
+        level: resolveLogLevel('info'),
         pretty:
             process.env.EXAMPLE_PINO_PRETTY === '0'
                 ? false
@@ -57,7 +57,13 @@ async function main(): Promise<void> {
     )
 
     const extractIncomingText = (
-        message: { conversation?: string; extendedTextMessage?: { text?: string } } | undefined
+        message:
+            | {
+                  conversation?: string | null
+                  extendedTextMessage?: { text?: string | null } | null
+              }
+            | null
+            | undefined
     ): string | undefined => {
         if (!message) {
             return undefined

@@ -41,6 +41,10 @@ export function isGroupJid(jid: string, groupServer: string): boolean {
     return jid.endsWith(`@${groupServer}`)
 }
 
+export function isGroupOrBroadcastJid(jid: string, groupServer: string): boolean {
+    return isGroupJid(jid, groupServer) || jid.endsWith('@broadcast')
+}
+
 export function parseSignalAddressFromJid(jid: string): SignalAddress {
     const parsed = splitJid(jid)
     const colonIndex = parsed.user.indexOf(':')

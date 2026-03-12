@@ -1,8 +1,10 @@
 import { WaAppStateMemoryStore } from '@store/providers/memory/appstate.store'
+import { WaRetryMemoryStore } from '@store/providers/memory/retry.store'
 import { SenderKeyStore as SenderKeyMemoryStore } from '@store/providers/memory/sender-key.store'
 import { WaSignalStore as WaSignalMemoryStore } from '@store/providers/memory/signal.store'
 import { WaAppStateSqliteStore } from '@store/providers/sqlite/appstate.store'
 import { WaAuthSqliteStore } from '@store/providers/sqlite/auth.store'
+import { WaRetrySqliteStore } from '@store/providers/sqlite/retry.store'
 import { SenderKeyStore as SenderKeySqliteStore } from '@store/providers/sqlite/sender-key.store'
 import { WaSignalStore as WaSignalSqliteStore } from '@store/providers/sqlite/signal.store'
 import type {
@@ -18,7 +20,8 @@ const DEFAULT_PROVIDERS: Required<WaStoreProviderSelection> = {
     auth: 'sqlite',
     signal: 'sqlite',
     senderKey: 'sqlite',
-    appState: 'sqlite'
+    appState: 'sqlite',
+    retry: 'sqlite'
 }
 
 function resolveCustomStore<T>(
@@ -69,12 +72,14 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
                 custom?.appState,
                 'appState'
             )
+            const customRetry = resolveCustomStore(normalizedSessionId, custom?.retry, 'retry')
 
             const requiresSqlite =
                 !customAuth ||
                 (!customSignal && providers.signal === 'sqlite') ||
                 (!customSenderKey && providers.senderKey === 'sqlite') ||
-                (!customAppState && providers.appState === 'sqlite')
+                (!customAppState && providers.appState === 'sqlite') ||
+                (!customRetry && providers.retry === 'sqlite')
 
             const sqlite = options.sqlite
             if (requiresSqlite && (!sqlite?.path || sqlite.path.trim().length === 0)) {
@@ -107,7 +112,12 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
                     customAppState ??
                     (providers.appState === 'memory'
                         ? new WaAppStateMemoryStore()
-                        : new WaAppStateSqliteStore(sqliteOptions!))
+                        : new WaAppStateSqliteStore(sqliteOptions!)),
+                retry:
+                    customRetry ??
+                    (providers.retry === 'memory'
+                        ? new WaRetryMemoryStore()
+                        : new WaRetrySqliteStore(sqliteOptions!))
             }
 
             sessions.set(normalizedSessionId, session)

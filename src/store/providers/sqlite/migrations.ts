@@ -248,6 +248,46 @@ const SQLITE_MIGRATIONS: readonly WaSqliteMigration[] = [
                     ON appstate_sync_keys (session_id, key_epoch);
             `)
         }
+    },
+    {
+        id: '0003_retry_message_schema',
+        up: (db) => {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS retry_outbound_messages (
+                    session_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    to_jid TEXT NOT NULL,
+                    participant_jid TEXT,
+                    recipient_jid TEXT,
+                    message_type TEXT NOT NULL,
+                    replay_mode TEXT NOT NULL,
+                    replay_payload BLOB NOT NULL,
+                    state TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL,
+                    updated_at_ms INTEGER NOT NULL,
+                    expires_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, message_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS retry_outbound_messages_by_expiry
+                    ON retry_outbound_messages (session_id, expires_at_ms);
+                CREATE INDEX IF NOT EXISTS retry_outbound_messages_by_state
+                    ON retry_outbound_messages (session_id, state);
+
+                CREATE TABLE IF NOT EXISTS retry_inbound_counters (
+                    session_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    requester_jid TEXT NOT NULL,
+                    retry_count INTEGER NOT NULL,
+                    updated_at_ms INTEGER NOT NULL,
+                    expires_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, message_id, requester_jid)
+                );
+
+                CREATE INDEX IF NOT EXISTS retry_inbound_counters_by_expiry
+                    ON retry_inbound_counters (session_id, expires_at_ms);
+            `)
+        }
     }
 ]
 

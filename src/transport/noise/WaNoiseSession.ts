@@ -49,13 +49,15 @@ async function resolveHandshakePayload(config: WaNoiseConfig): Promise<Uint8Arra
 }
 
 function buildRoutingInfoPrefix(routingInfo: Uint8Array): Uint8Array {
-    const prefix = new Uint8Array(2 + 1 + 2 + routingInfo.length)
+    const prefix = new Uint8Array(2 + 2 + 1 + 2 + routingInfo.length)
     prefix[0] = 0x45 // E
     prefix[1] = 0x44 // D
-    prefix[2] = (routingInfo.length >> 16) & 0xff
-    prefix[3] = (routingInfo.length >> 8) & 0xff
-    prefix[4] = routingInfo.length & 0xff
-    prefix.set(routingInfo, 5)
+    prefix[2] = 0x00
+    prefix[3] = 0x01
+    prefix[4] = (routingInfo.length >> 16) & 0xff
+    prefix[5] = (routingInfo.length >> 8) & 0xff
+    prefix[6] = routingInfo.length & 0xff
+    prefix.set(routingInfo, 7)
     return prefix
 }
 

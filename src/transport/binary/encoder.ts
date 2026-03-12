@@ -5,10 +5,8 @@ import {
     DICTIONARY_0,
     DICTIONARY_TOKEN_MAPS,
     HEX_8,
-    JID_PAIR,
     LIST_16,
     LIST_8,
-    LIST_EMPTY,
     NIBBLE_8,
     SINGLE_BYTE_TOKEN_MAP
 } from '@transport/binary/constants'
@@ -134,6 +132,9 @@ function writePackedString(value: string, packedType: number, writer: ByteWriter
 }
 
 function writeBinaryLength(length: number, writer: ByteWriter): void {
+    if (!Number.isSafeInteger(length) || length < 0) {
+        throw new Error(`invalid binary length ${length}`)
+    }
     if (length < 256) {
         writer.writeUint8(BINARY_8)
         writer.writeUint8(length)
@@ -145,6 +146,9 @@ function writeBinaryLength(length: number, writer: ByteWriter): void {
         writer.writeUint8((length >>> 8) & 0xff)
         writer.writeUint8(length & 0xff)
         return
+    }
+    if (!(length < 0x1_0000_0000)) {
+        throw new Error(`binary with length ${length} is too big for WAP protocol`)
     }
     writer.writeUint8(BINARY_32)
     writer.writeUint32(length)
@@ -185,31 +189,19 @@ function writeString(value: string, writer: ByteWriter): void {
 }
 
 function writeListSize(size: number, writer: ByteWriter): void {
-    if (size === 0) {
-        writer.writeUint8(LIST_EMPTY)
-        return
+    if (!Number.isSafeInteger(size) || size < 0) {
+        throw new Error(`invalid list size ${size}`)
     }
     if (size < 256) {
         writer.writeUint8(LIST_8)
         writer.writeUint8(size)
         return
     }
+    if (!(size < 1 << 16)) {
+        throw new Error(`list with size ${size} is too large for WAP protocol`)
+    }
     writer.writeUint8(LIST_16)
     writer.writeUint16(size)
-}
-
-function maybeWriteJid(value: string, writer: ByteWriter): boolean {
-    const atIndex = value.indexOf('@')
-    if (atIndex <= 0 || atIndex === value.length - 1) {
-        return false
-    }
-
-    const user = value.slice(0, atIndex)
-    const server = value.slice(atIndex + 1)
-    writer.writeUint8(JID_PAIR)
-    writeString(user, writer)
-    writeString(server, writer)
-    return true
 }
 
 function writeNodeInternal(node: BinaryNode, writer: ByteWriter): void {
@@ -222,9 +214,7 @@ function writeNodeInternal(node: BinaryNode, writer: ByteWriter): void {
 
     for (const [key, value] of attrs) {
         writeString(key, writer)
-        if (!maybeWriteJid(value, writer)) {
-            writeString(value, writer)
-        }
+        writeString(value, writer)
     }
 
     if (!hasContent) {
@@ -233,7 +223,9 @@ function writeNodeInternal(node: BinaryNode, writer: ByteWriter): void {
 
     const content = node.content
     if (typeof content === 'string') {
-        writeString(content, writer)
+        const encoded = TEXT_ENCODER.encode(content)
+        writeBinaryLength(encoded.length, writer)
+        writer.writeBytes(encoded)
         return
     }
     if (content instanceof Uint8Array) {

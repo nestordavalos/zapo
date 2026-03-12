@@ -62,7 +62,7 @@ export class WaNodeTransport extends EventEmitter {
         this.logger.trace('node transport frame in', { byteLength: frame.byteLength })
         let node: BinaryNode
         try {
-            node = decodeBinaryNodeStanza(frame)
+            node = await decodeBinaryNodeStanza(frame)
         } catch (error) {
             const normalized = toError(error)
             if (normalized.message === 'stream end stanza is not a binary node') {

@@ -29,10 +29,10 @@ export const NIBBLE_ALPHABET: readonly string[] = [
     '9',
     '-',
     '.',
-    '?',
-    '?',
-    '?',
-    '?'
+    '\uFFFD',
+    '\uFFFD',
+    '\uFFFD',
+    '\uFFFD'
 ]
 export const HEX_ALPHABET: readonly string[] = [
     '0',

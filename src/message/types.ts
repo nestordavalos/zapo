@@ -33,6 +33,8 @@ export interface WaEncryptedMessageInput {
     readonly to: string
     readonly encType: 'msg' | 'pkmsg' | 'skmsg'
     readonly ciphertext: Uint8Array
+    readonly deviceIdentity?: Uint8Array
+    readonly encCount?: number
     readonly id?: string
     readonly type?: string
     readonly participant?: string

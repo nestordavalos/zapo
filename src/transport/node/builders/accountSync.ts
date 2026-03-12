@@ -2,7 +2,7 @@ import { WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
 import { buildIqNode } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
-export function buildAccountDevicesSyncIq(meJid: string, sid: string): BinaryNode {
+export function buildAccountDevicesSyncIq(userJids: readonly string[], sid: string): BinaryNode {
     return buildIqNode('get', WA_DEFAULTS.HOST_DOMAIN, WA_XMLNS.USYNC, [
         {
             tag: WA_NODE_TAGS.USYNC,
@@ -29,14 +29,12 @@ export function buildAccountDevicesSyncIq(meJid: string, sid: string): BinaryNod
                 {
                     tag: WA_NODE_TAGS.LIST,
                     attrs: {},
-                    content: [
-                        {
-                            tag: WA_NODE_TAGS.USER,
-                            attrs: {
-                                jid: meJid
-                            }
+                    content: userJids.map((jid) => ({
+                        tag: WA_NODE_TAGS.USER,
+                        attrs: {
+                            jid
                         }
-                    ]
+                    }))
                 }
             ]
         }

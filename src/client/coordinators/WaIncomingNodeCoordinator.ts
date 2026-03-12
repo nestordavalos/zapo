@@ -52,6 +52,8 @@ interface WaIncomingNodeRuntimePort {
     readonly handleCompanionRegRefreshNotificationNode: (node: BinaryNode) => Promise<boolean>
     readonly handleIncomingMessageNode: (node: BinaryNode) => Promise<boolean>
     readonly sendNode: (node: BinaryNode) => Promise<void>
+    readonly handleIncomingRetryReceipt: (node: BinaryNode) => Promise<void>
+    readonly trackOutboundReceipt: (node: BinaryNode) => Promise<void>
     readonly emitIncomingReceipt: (event: WaIncomingReceiptEvent) => void
     readonly emitIncomingPresence: (event: WaIncomingPresenceEvent) => void
     readonly emitIncomingChatstate: (event: WaIncomingChatstateEvent) => void
@@ -118,6 +120,19 @@ export class WaIncomingNodeCoordinator {
     }
 
     private async dispatchIncomingNode(node: BinaryNode): Promise<boolean> {
+        if (node.tag === WA_MESSAGE_TAGS.RECEIPT) {
+            const handlers = this.nodeHandlers[node.tag]
+            if (handlers) {
+                for (const handler of handlers) {
+                    if (await handler(node)) {
+                        this.runtime.tryResolvePendingNode(node)
+                        return true
+                    }
+                }
+            }
+            return this.runtime.tryResolvePendingNode(node)
+        }
+
         if (this.runtime.tryResolvePendingNode(node)) {
             return true
         }
@@ -144,6 +159,9 @@ export class WaIncomingNodeCoordinator {
         const incomingNodeHandlerOptions = {
             logger: this.logger,
             sendNode: (node: BinaryNode) => this.runtime.sendNode(node),
+            handleIncomingRetryReceipt: (node: BinaryNode) =>
+                this.runtime.handleIncomingRetryReceipt(node),
+            trackOutboundReceipt: (node: BinaryNode) => this.runtime.trackOutboundReceipt(node),
             emitIncomingReceipt: (event: WaIncomingReceiptEvent) =>
                 this.runtime.emitIncomingReceipt(event),
             emitIncomingPresence: (event: WaIncomingPresenceEvent) =>
@@ -276,7 +294,11 @@ export class WaIncomingNodeCoordinator {
         const dirtyNodes = getNodeChildrenByTag(node, WA_NODE_TAGS.DIRTY)
         const dirtyBits = this.dirtySync.parseDirtyBits(dirtyNodes)
         if (dirtyBits.length > 0) {
-            await this.dirtySync.handleDirtyBits(dirtyBits)
+            void this.dirtySync.handleDirtyBits(dirtyBits).catch((error) => {
+                this.logger.warn('dirty bits sync failed', {
+                    message: toError(error).message
+                })
+            })
             handled = true
         }
         return handled

@@ -1,3 +1,6 @@
+import { promisify } from 'node:util'
+import { inflateRaw, unzip } from 'node:zlib'
+
 import { WA_DEFAULTS } from '@protocol/constants'
 import {
     BINARY_20,
@@ -20,7 +23,10 @@ import {
 } from '@transport/binary/constants'
 import { DICTIONARIES, SINGLE_BYTE_TOKENS } from '@transport/binary/tokens'
 import type { BinaryNode } from '@transport/types'
-import { TEXT_DECODER } from '@util/bytes'
+import { TEXT_DECODER, TEXT_ENCODER, toBytesView } from '@util/bytes'
+
+const unzipAsync = promisify(unzip)
+const inflateRawAsync = promisify(inflateRaw)
 
 class ByteReader {
     private readonly data: Uint8Array
@@ -180,6 +186,7 @@ function decodeJidInterop(reader: ByteReader): string {
     const user = decodeTokenString(reader.readUint8(), reader)
     const device = reader.readUint16()
     const integrator = reader.readUint16()
+    decodeTokenString(reader.readUint8(), reader)
     return `${integrator}-${user}:${device}@interop`
 }
 
@@ -262,7 +269,7 @@ function decodeNodeInternal(reader: ByteReader): BinaryNode {
     if (remaining === 1) {
         const contentToken = reader.readUint8()
         if (contentToken === LIST_EMPTY) {
-            content = []
+            content = undefined
         } else if (contentToken === LIST_8 || contentToken === LIST_16) {
             const childrenCount = contentToken === LIST_8 ? reader.readUint8() : reader.readUint16()
             const children: BinaryNode[] = new Array(childrenCount)
@@ -275,7 +282,7 @@ function decodeNodeInternal(reader: ByteReader): BinaryNode {
             if (value === null) {
                 content = undefined
             } else if (typeof value === 'string') {
-                content = value
+                content = TEXT_ENCODER.encode(value)
             } else {
                 content = value
             }
@@ -290,22 +297,31 @@ function decodeNodeInternal(reader: ByteReader): BinaryNode {
 
 export function decodeBinaryNode(data: Uint8Array): BinaryNode {
     const reader = new ByteReader(data)
-    const node = decodeNodeInternal(reader)
-    if (reader.getRemaining() !== 0) {
-        throw new Error(`binary node decode has trailing bytes: ${reader.getRemaining()}`)
-    }
-    return node
+    return decodeNodeInternal(reader)
 }
 
-export function decodeBinaryNodeStanza(stanza: Uint8Array): BinaryNode {
+async function inflateCompressedStanza(data: Uint8Array): Promise<Uint8Array> {
+    try {
+        return toBytesView(await unzipAsync(data))
+    } catch {
+        try {
+            return toBytesView(await inflateRawAsync(data))
+        } catch (rawError) {
+            const message = rawError instanceof Error ? rawError.message : String(rawError)
+            throw new Error(`failed to inflate compressed stanza: ${message}`)
+        }
+    }
+}
+
+export async function decodeBinaryNodeStanza(stanza: Uint8Array): Promise<BinaryNode> {
     const reader = new ByteReader(stanza)
     const flag = reader.readUint8()
-    if (flag === STREAM_END) {
+    if (flag === STREAM_END && reader.getRemaining() === 0) {
         throw new Error('stream end stanza is not a binary node')
     }
+    let nodeBytes = reader.readBytes(reader.getRemaining())
     if ((flag & 0x02) !== 0) {
-        throw new Error('compressed stanza is not supported in binary decoder')
+        nodeBytes = await inflateCompressedStanza(nodeBytes)
     }
-    const nodeBytes = reader.readBytes(reader.getRemaining())
     return decodeBinaryNode(nodeBytes)
 }

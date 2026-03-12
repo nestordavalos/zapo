@@ -1,9 +1,11 @@
 import type { WaIncomingMessageEvent, WaIncomingUnhandledStanzaEvent } from '@client/types'
 import type { Logger } from '@infra/log/types'
+import { unwrapDeviceSentMessage } from '@message/device-sent'
 import { unpadPkcs7 } from '@message/padding'
 import { proto } from '@proto'
 import { WA_MESSAGE_TAGS, WA_MESSAGE_TYPES } from '@protocol/constants'
 import { parseSignalAddressFromJid } from '@protocol/jid'
+import type { WaRetryDecryptFailureContext } from '@retry/types'
 import type { SenderKeyManager } from '@signal/group/SenderKeyManager'
 import type { SignalProtocol } from '@signal/session/SignalProtocol'
 import {
@@ -21,6 +23,10 @@ interface WaIncomingMessageAckHandlerOptions {
     readonly getMeJid?: () => string | null | undefined
     readonly signalProtocol?: SignalProtocol
     readonly senderKeyManager?: SenderKeyManager
+    readonly onDecryptFailure?: (
+        context: WaRetryDecryptFailureContext,
+        error: unknown
+    ) => Promise<boolean>
     readonly emitIncomingMessage?: (event: WaIncomingMessageEvent) => void
     readonly emitUnhandledStanza?: (event: WaIncomingUnhandledStanzaEvent) => void
 }
@@ -54,6 +60,22 @@ function buildBaseIncomingEvent(node: BinaryNode): {
 }
 
 function pickSenderKeyDistributionPayload(
+    message: proto.IMessage
+): { readonly groupId: string; readonly payload: Uint8Array } | null {
+    const direct = pickDirectSenderKeyDistributionPayload(message)
+    if (direct) {
+        return direct
+    }
+
+    const nestedMessage = message.deviceSentMessage?.message ?? undefined
+    if (nestedMessage) {
+        return pickSenderKeyDistributionPayload(nestedMessage)
+    }
+
+    return null
+}
+
+function pickDirectSenderKeyDistributionPayload(
     message: proto.IMessage
 ): { readonly groupId: string; readonly payload: Uint8Array } | null {
     const senderKeyDistribution = message.senderKeyDistributionMessage
@@ -119,6 +141,58 @@ async function maybeProcessSenderKeyDistributionMessage(
     }
 }
 
+async function sendRetryReceiptForDecryptFailure(
+    node: BinaryNode,
+    options: WaIncomingMessageAckHandlerOptions,
+    error: unknown,
+    encType: string
+): Promise<boolean> {
+    const stanzaId = node.attrs.id
+    const from = node.attrs.from
+    if (!stanzaId || !from) {
+        return false
+    }
+
+    const retryContext: WaRetryDecryptFailureContext = {
+        messageNode: node,
+        stanzaId,
+        from,
+        participant: node.attrs.participant,
+        recipient: node.attrs.recipient,
+        t: node.attrs.t
+    }
+
+    if (options.onDecryptFailure) {
+        return options.onDecryptFailure(retryContext, error)
+    }
+
+    const retryReceiptNode = buildInboundRetryReceiptNode(
+        node,
+        stanzaId,
+        from,
+        options.getMeJid?.()
+    )
+    try {
+        await options.sendNode(retryReceiptNode)
+        options.logger.debug('sent retry receipt for undecryptable incoming message', {
+            id: stanzaId,
+            to: from,
+            participant: retryReceiptNode.attrs.participant,
+            encType
+        })
+        return true
+    } catch (retryError) {
+        options.logger.warn('failed to send retry receipt for incoming message', {
+            id: stanzaId,
+            from,
+            participant: node.attrs.participant,
+            encType,
+            message: toError(retryError).message
+        })
+        return false
+    }
+}
+
 export async function handleIncomingMessageAck(
     node: BinaryNode,
     options: WaIncomingMessageAckHandlerOptions
@@ -142,7 +216,9 @@ export async function handleIncomingMessageAck(
                     ciphertext
                 })
                 const unpaddedPlaintext = unpadPkcs7(plaintext)
-                const message = proto.Message.decode(unpaddedPlaintext)
+                const message = normalizeIncomingDecryptedMessage(
+                    proto.Message.decode(unpaddedPlaintext)
+                )
                 await maybeProcessSenderKeyDistributionMessage(senderJid, message, options, node)
                 options.emitIncomingMessage?.({
                     ...buildBaseIncomingEvent(node),
@@ -164,36 +240,14 @@ export async function handleIncomingMessageAck(
                     reason: `message.decrypt_failed.${encType}`
                 })
 
-                const id = node.attrs.id
-                const from = node.attrs.from
-                if (id && from) {
-                    const retryReceiptNode = buildInboundRetryReceiptNode(
-                        node,
-                        id,
-                        from,
-                        options.getMeJid?.()
-                    )
-                    try {
-                        await options.sendNode(retryReceiptNode)
-                        shouldSendStandardReceipt = false
-                        options.logger.debug(
-                            'sent retry receipt for undecryptable incoming message',
-                            {
-                                id,
-                                to: from,
-                                participant: retryReceiptNode.attrs.participant,
-                                encType
-                            }
-                        )
-                    } catch (retryError) {
-                        options.logger.warn('failed to send retry receipt for incoming message', {
-                            id,
-                            from,
-                            participant: node.attrs.participant,
-                            encType,
-                            message: toError(retryError).message
-                        })
-                    }
+                const retrySent = await sendRetryReceiptForDecryptFailure(
+                    node,
+                    options,
+                    error,
+                    encType
+                )
+                if (retrySent) {
+                    shouldSendStandardReceipt = false
                 }
             }
         } else if (encType === 'skmsg') {
@@ -216,7 +270,9 @@ export async function handleIncomingMessageAck(
                     }
                 )
                 const unpaddedPlaintext = unpadPkcs7(plaintext)
-                const message = proto.Message.decode(unpaddedPlaintext)
+                const message = normalizeIncomingDecryptedMessage(
+                    proto.Message.decode(unpaddedPlaintext)
+                )
                 await maybeProcessSenderKeyDistributionMessage(senderJid, message, options, node)
                 options.emitIncomingMessage?.({
                     ...buildBaseIncomingEvent(node),
@@ -238,36 +294,14 @@ export async function handleIncomingMessageAck(
                     reason: `message.decrypt_failed.${encType}`
                 })
 
-                const id = node.attrs.id
-                const from = node.attrs.from
-                if (id && from) {
-                    const retryReceiptNode = buildInboundRetryReceiptNode(
-                        node,
-                        id,
-                        from,
-                        options.getMeJid?.()
-                    )
-                    try {
-                        await options.sendNode(retryReceiptNode)
-                        shouldSendStandardReceipt = false
-                        options.logger.debug(
-                            'sent retry receipt for undecryptable incoming message',
-                            {
-                                id,
-                                to: from,
-                                participant: retryReceiptNode.attrs.participant,
-                                encType
-                            }
-                        )
-                    } catch (retryError) {
-                        options.logger.warn('failed to send retry receipt for incoming message', {
-                            id,
-                            from,
-                            participant: node.attrs.participant,
-                            encType,
-                            message: toError(retryError).message
-                        })
-                    }
+                const retrySent = await sendRetryReceiptForDecryptFailure(
+                    node,
+                    options,
+                    error,
+                    encType
+                )
+                if (retrySent) {
+                    shouldSendStandardReceipt = false
                 }
             }
         }
@@ -309,4 +343,8 @@ export async function handleIncomingMessageAck(
     })
     await options.sendNode(receiptNode)
     return true
+}
+
+function normalizeIncomingDecryptedMessage(message: proto.IMessage): proto.IMessage {
+    return unwrapDeviceSentMessage(message) ?? message
 }

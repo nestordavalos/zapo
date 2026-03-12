@@ -1,6 +1,5 @@
 import { ConsoleLogger } from '@infra/log/ConsoleLogger'
 import type { Logger } from '@infra/log/types'
-import { BoundedTaskQueue } from '@infra/perf/BoundedTaskQueue'
 import { WA_DEFAULTS } from '@protocol/constants'
 import { WaNoiseSession } from '@transport/noise/WaNoiseSession'
 import type { SocketCloseInfo, WaCommsConfig, WaCommsState } from '@transport/types'
@@ -34,7 +33,6 @@ export class WaComms {
     private reconnectAttempts: number
     private reconnectTimer: NodeJS.Timeout | null
     private waiters: ConnectionWaiter[]
-    private readonly incomingPayloadQueue: BoundedTaskQueue
     private stanzaHandler: StanzaHandler | null
     private inflateFrame: InflateFrame | null
     private pendingFrames: Uint8Array[]
@@ -80,8 +78,8 @@ export class WaComms {
             onError: async (error) => {
                 this.logger.warn('socket runtime error', { message: error.message })
             },
-            onMessage: async (payload) => {
-                await this.onSocketMessage(payload)
+            onMessage: (payload) => {
+                this.onSocketMessage(payload)
             }
         })
         this.started = false
@@ -91,7 +89,6 @@ export class WaComms {
         this.reconnectAttempts = 0
         this.reconnectTimer = null
         this.waiters = []
-        this.incomingPayloadQueue = new BoundedTaskQueue(4096, 1)
         this.stanzaHandler = null
         this.inflateFrame = null
         this.pendingFrames = []
@@ -314,9 +311,9 @@ export class WaComms {
         })
     }
 
-    private async onSocketMessage(payload: Uint8Array): Promise<void> {
+    private onSocketMessage(payload: Uint8Array): void {
         this.logger.trace('comms socket payload received', { byteLength: payload.byteLength })
-        await this.incomingPayloadQueue.enqueue(async () => this.processSocketPayload(payload))
+        void this.processSocketPayload(payload)
     }
 
     private async processSocketPayload(payload: Uint8Array): Promise<void> {
@@ -327,7 +324,7 @@ export class WaComms {
         try {
             const frames = await this.noiseSession.pushWireChunk(payload)
             for (const frame of frames) {
-                await this.onDecodedFrame(frame)
+                void this.onDecodedFrame(frame)
             }
         } catch (error) {
             const normalized = toError(error)
@@ -388,7 +385,7 @@ export class WaComms {
         }
         const buffered = await session.pushWireChunk(EMPTY_BYTES)
         for (const frame of buffered) {
-            await this.onDecodedFrame(frame)
+            void this.onDecodedFrame(frame)
         }
         this.resumeHandshakeFailures = 0
         this.lastServerStaticKey = session.getServerStaticKey()
@@ -405,7 +402,7 @@ export class WaComms {
         this.logger.debug('flushing pending comms frames', { count: this.pendingFrames.length })
         const buffered = this.pendingFrames.splice(0, this.pendingFrames.length)
         for (const frame of buffered) {
-            await this.onDecodedFrame(frame)
+            void this.onDecodedFrame(frame)
         }
     }
 

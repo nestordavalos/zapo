@@ -21,6 +21,8 @@
             "@protocol": ["src/protocol/index.ts"],
             "@protocol/*": ["src/protocol/*"],
             "@proto": ["src/proto.ts"],
+            "@retry": ["src/retry/index.ts"],
+            "@retry/*": ["src/retry/*"],
             "@signal": ["src/signal/index.ts"],
             "@signal/*": ["src/signal/*"],
             "@store": ["src/store/index.ts"],

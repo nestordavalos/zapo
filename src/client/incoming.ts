@@ -10,7 +10,10 @@ import type {
 } from '@client/types'
 import type { Logger } from '@infra/log/types'
 import { WA_MESSAGE_TAGS, WA_NODE_TAGS } from '@protocol/constants'
-import { buildInboundRetryReceiptAckNode } from '@transport/node/builders/message'
+import {
+    buildInboundReceiptAckNode,
+    buildInboundRetryReceiptAckNode
+} from '@transport/node/builders/message'
 import { buildNotificationAckNode } from '@transport/node/builders/pairing'
 import { getFirstNodeChild } from '@transport/node/helpers'
 import { parseOptionalInt } from '@transport/stream/parse'
@@ -20,6 +23,8 @@ import { toError } from '@util/primitives'
 interface IncomingNodeHandlerOptions {
     readonly logger: Logger
     readonly sendNode: (node: BinaryNode) => Promise<void>
+    readonly handleIncomingRetryReceipt?: (node: BinaryNode) => Promise<void>
+    readonly trackOutboundReceipt?: (node: BinaryNode) => Promise<void>
     readonly emitIncomingReceipt: (event: WaIncomingReceiptEvent) => void
     readonly emitIncomingPresence: (event: WaIncomingPresenceEvent) => void
     readonly emitIncomingChatstate: (event: WaIncomingChatstateEvent) => void
@@ -138,22 +143,41 @@ export function createIncomingReceiptHandler(
             recipient: node.attrs.recipient
         })
 
-        const receiptType = node.attrs.type
-        if (receiptType === 'retry' || receiptType === 'enc_rekey_retry') {
-            if (!node.attrs.from || !node.attrs.id) {
-                options.logger.warn('retry receipt missing required attrs', {
-                    hasFrom: node.attrs.from !== undefined,
-                    hasId: node.attrs.id !== undefined,
-                    type: receiptType
-                })
-                return
-            }
-            await sendSafeAck(
-                options.logger,
-                options.sendNode,
-                buildInboundRetryReceiptAckNode(node)
-            )
+        try {
+            await options.trackOutboundReceipt?.(node)
+        } catch (error) {
+            options.logger.warn('failed to track outbound message receipt state', {
+                id: node.attrs.id,
+                from: node.attrs.from,
+                type: node.attrs.type,
+                message: toError(error).message
+            })
         }
+
+        const receiptType = node.attrs.type
+        if (!node.attrs.id || !node.attrs.from) {
+            options.logger.warn('incoming receipt missing required attrs for ack', {
+                hasFrom: node.attrs.from !== undefined,
+                hasId: node.attrs.id !== undefined,
+                type: receiptType
+            })
+            return
+        }
+
+        if (receiptType === 'retry' || receiptType === 'enc_rekey_retry') {
+            if (options.handleIncomingRetryReceipt) {
+                await options.handleIncomingRetryReceipt(node)
+            } else {
+                await sendSafeAck(
+                    options.logger,
+                    options.sendNode,
+                    buildInboundRetryReceiptAckNode(node)
+                )
+            }
+            return
+        }
+
+        await sendSafeAck(options.logger, options.sendNode, buildInboundReceiptAckNode(node))
     })
 }
 

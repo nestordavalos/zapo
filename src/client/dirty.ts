@@ -6,8 +6,10 @@ import {
     WA_DEFAULTS,
     WA_DIRTY_PROTOCOLS,
     WA_DIRTY_TYPES,
+    WA_IQ_TYPES,
     WA_SUPPORTED_DIRTY_TYPES
 } from '@protocol/constants'
+import { toUserJid } from '@protocol/jid'
 import {
     buildAccountBlocklistSyncIq,
     buildAccountDevicesSyncIq,
@@ -18,7 +20,7 @@ import {
     buildNewsletterMetadataSyncIq
 } from '@transport/node/builders/accountSync'
 import { getNodeChildren } from '@transport/node/helpers'
-import { assertIqResult } from '@transport/node/query'
+import { assertIqResult, parseIqError } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
 
@@ -213,16 +215,24 @@ async function handleSyncdAppStateDirtyBit(runtime: WaDirtySyncRuntime): Promise
 }
 
 async function syncAccountDevicesDirtyBit(runtime: WaDirtySyncRuntime): Promise<void> {
-    const meJid = requireCurrentMeJid(runtime, 'account_sync devices skipped: meJid is missing')
+    const credentials = runtime.getCurrentCredentials()
+    const meJid = credentials?.meJid ?? null
     if (!meJid) {
+        runtime.logger.warn('account_sync devices skipped: meJid is missing')
+        return
+    }
+
+    const userJids = resolveAccountSyncDeviceTargets(credentials)
+    if (userJids.length === 0) {
+        runtime.logger.warn('account_sync devices skipped: no valid account_sync targets')
         return
     }
 
     await runSyncQuery(runtime, {
         queryContext: 'account_sync.devices',
-        node: buildAccountDevicesSyncIq(meJid, await generateUsyncSid()),
+        node: buildAccountDevicesSyncIq(userJids, await generateUsyncSid()),
         logMessage: 'account_sync devices synchronized',
-        contextData: { meJid }
+        contextData: { meJid, targets: userJids.join(',') }
     })
 }
 
@@ -231,13 +241,38 @@ async function syncAccountPictureDirtyBit(runtime: WaDirtySyncRuntime): Promise<
     if (!meJid) {
         return
     }
+    const targetJid = toUserJid(meJid)
+    const response = await runtime.queryWithContext(
+        'account_sync.picture',
+        buildAccountPictureSyncIq(targetJid),
+        WA_DEFAULTS.IQ_TIMEOUT_MS,
+        { meJid, target: targetJid }
+    )
 
-    await runSyncQuery(runtime, {
-        queryContext: 'account_sync.picture',
-        node: buildAccountPictureSyncIq(meJid),
-        logMessage: 'account_sync picture synchronized',
-        contextData: { meJid }
-    })
+    if (response.tag !== 'iq') {
+        throw new Error(`account_sync.picture returned non-iq node (${response.tag})`)
+    }
+    if (response.attrs.type === WA_IQ_TYPES.RESULT) {
+        runtime.logger.debug('account_sync picture synchronized', {
+            meJid,
+            target: targetJid
+        })
+        return
+    }
+
+    const iqError = parseIqError(response)
+    const isPictureMissing =
+        (iqError.numericCode === 404 || iqError.code === '404') &&
+        iqError.text.toLowerCase() === 'item-not-found'
+    if (isPictureMissing) {
+        runtime.logger.debug('account_sync picture skipped: no profile picture found', {
+            meJid,
+            target: targetJid
+        })
+        return
+    }
+
+    throw new Error(`account_sync.picture iq failed (${iqError.code}: ${iqError.text})`)
 }
 
 async function syncAccountPrivacyDirtyBit(runtime: WaDirtySyncRuntime): Promise<void> {
@@ -294,6 +329,19 @@ function requireCurrentMeJid(runtime: WaDirtySyncRuntime, warnMessage: string): 
         return null
     }
     return meJid
+}
+
+function resolveAccountSyncDeviceTargets(credentials: WaAuthCredentials | null): readonly string[] {
+    if (!credentials?.meJid) {
+        return []
+    }
+
+    const dedup = new Set<string>()
+    dedup.add(toUserJid(credentials.meJid))
+    if (credentials.meLid && credentials.meLid.includes('@')) {
+        dedup.add(toUserJid(credentials.meLid))
+    }
+    return [...dedup]
 }
 
 async function runSyncQuery(

@@ -11,7 +11,7 @@ import type {
     WaMessagePublishResult,
     WaSendReceiptInput
 } from '@message/types'
-import { WA_DEFAULTS, WA_MESSAGE_TAGS, WA_MESSAGE_TYPES } from '@protocol/constants'
+import { WA_DEFAULTS, WA_MESSAGE_TAGS, WA_MESSAGE_TYPES, WA_NODE_TAGS } from '@protocol/constants'
 import type { BinaryNode } from '@transport/types'
 import { delay } from '@util/async'
 import { toError } from '@util/primitives'
@@ -143,19 +143,31 @@ export class WaMessageClient {
         if (input.deviceFanout) {
             attrs.device_fanout = input.deviceFanout
         }
+        const encAttrs: Record<string, string> = {
+            v: WA_MESSAGE_TYPES.ENC_VERSION,
+            type: input.encType
+        }
+        if (input.encCount !== undefined && input.encCount > 0) {
+            encAttrs.count = String(Math.trunc(input.encCount))
+        }
+        const content: BinaryNode[] = [
+            {
+                tag: WA_MESSAGE_TAGS.ENC,
+                attrs: encAttrs,
+                content: input.ciphertext
+            }
+        ]
+        if (input.deviceIdentity) {
+            content.push({
+                tag: WA_NODE_TAGS.DEVICE_IDENTITY,
+                attrs: {},
+                content: input.deviceIdentity
+            })
+        }
         const node: BinaryNode = {
             tag: WA_MESSAGE_TAGS.MESSAGE,
             attrs,
-            content: [
-                {
-                    tag: WA_MESSAGE_TAGS.ENC,
-                    attrs: {
-                        v: WA_MESSAGE_TYPES.ENC_VERSION,
-                        type: input.encType
-                    },
-                    content: input.ciphertext
-                }
-            ]
+            content
         }
         return this.publishNode(node, options)
     }

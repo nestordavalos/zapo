@@ -77,7 +77,7 @@ export class WaPassiveTasksCoordinator {
         }
 
         await this.uploadPreKeysIfMissing()
-        await this.syncAbProps()
+        this.logger.debug('abprops passive sync skipped: legacy abt iq path disabled')
         await this.flushDanglingReceipts()
     }
 

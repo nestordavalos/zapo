@@ -9,6 +9,7 @@ import { WaAuthClient } from '@auth/WaAuthClient'
 import { WaIncomingNodeCoordinator } from '@client/coordinators/WaIncomingNodeCoordinator'
 import { WaMessageDispatchCoordinator } from '@client/coordinators/WaMessageDispatchCoordinator'
 import { WaPassiveTasksCoordinator } from '@client/coordinators/WaPassiveTasksCoordinator'
+import { WaRetryCoordinator } from '@client/coordinators/WaRetryCoordinator'
 import { WaStreamControlCoordinator } from '@client/coordinators/WaStreamControlCoordinator'
 import { handleDirtyBits, parseDirtyBits } from '@client/dirty'
 import { buildMediaMessageContent, getMediaConn as getClientMediaConn } from '@client/messages'
@@ -36,11 +37,13 @@ import type {
 import { WaMessageClient } from '@message/WaMessageClient'
 import { proto, type Proto } from '@proto'
 import { getWaCompanionPlatformId, WA_DEFAULTS, WA_MESSAGE_TAGS } from '@protocol/constants'
+import type { WaRetryDecryptFailureContext } from '@retry/types'
 import { SignalDeviceSyncApi } from '@signal/api/SignalDeviceSyncApi'
 import { SignalSessionSyncApi } from '@signal/api/SignalSessionSyncApi'
 import { SenderKeyManager } from '@signal/group/SenderKeyManager'
 import { SignalProtocol } from '@signal/session/SignalProtocol'
 import type { WaAppStateStore } from '@store/contracts/appstate.store'
+import type { WaRetryStore } from '@store/contracts/retry.store'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 import { WaKeepAlive } from '@transport/keepalive/WaKeepAlive'
 import { queryWithContext as queryNodeWithContext } from '@transport/node/query'
@@ -56,6 +59,7 @@ export class WaClient extends EventEmitter {
     private readonly logger: Logger
     private readonly signalStore: WaSignalStore
     private readonly appStateStore: WaAppStateStore
+    private readonly retryStore: WaRetryStore
     private readonly authClient: WaAuthClient
     private readonly nodeOrchestrator: WaNodeOrchestrator
     private readonly keepAlive: WaKeepAlive
@@ -71,6 +75,7 @@ export class WaClient extends EventEmitter {
     private readonly signalProtocol: SignalProtocol
     private readonly signalDeviceSync: SignalDeviceSyncApi
     private readonly signalSessionSync: SignalSessionSyncApi
+    private readonly retryCoordinator: WaRetryCoordinator
     private clockSkewMs: number | null
     private mediaConnCache: WaMediaConn | null
     private comms: WaComms | null
@@ -110,6 +115,7 @@ export class WaClient extends EventEmitter {
         this.logger = logger
         this.signalStore = sessionStore.signal
         this.appStateStore = sessionStore.appState
+        this.retryStore = sessionStore.retry
         this.comms = null
         this.danglingReceipts = []
         this.clockSkewMs = null
@@ -206,6 +212,7 @@ export class WaClient extends EventEmitter {
         this.messageDispatch = new WaMessageDispatchCoordinator({
             logger: this.logger,
             messageClient: this.messageClient,
+            retryStore: this.retryStore,
             buildMessageContent: async (content) =>
                 buildMediaMessageContent(mediaMessageOptions, content),
             senderKeyManager: this.senderKeyManager,
@@ -213,6 +220,20 @@ export class WaClient extends EventEmitter {
             signalDeviceSync: this.signalDeviceSync,
             signalSessionSync: this.signalSessionSync,
             getCurrentMeJid: () => getCurrentCredentials()?.meJid,
+            getCurrentMeLid: () => getCurrentCredentials()?.meLid,
+            getCurrentSignedIdentity: () => getCurrentCredentials()?.signedIdentity
+        })
+        this.retryCoordinator = new WaRetryCoordinator({
+            logger: this.logger,
+            retryStore: this.retryStore,
+            signalStore: this.signalStore,
+            signalProtocol: this.signalProtocol,
+            signalDeviceSync: this.signalDeviceSync,
+            messageClient: this.messageClient,
+            sendNode,
+            tryResolvePendingNode: (node) => this.nodeOrchestrator.tryResolvePending(node),
+            getCurrentMeJid: () => getCurrentCredentials()?.meJid,
+            getCurrentMeLid: () => getCurrentCredentials()?.meLid,
             getCurrentSignedIdentity: () => getCurrentCredentials()?.signedIdentity
         })
         const incomingMessageAckOptions = {
@@ -221,6 +242,8 @@ export class WaClient extends EventEmitter {
             getMeJid: () => getCurrentCredentials()?.meJid,
             signalProtocol: this.signalProtocol,
             senderKeyManager: this.senderKeyManager,
+            onDecryptFailure: (context: WaRetryDecryptFailureContext, error: unknown) =>
+                this.retryCoordinator.onDecryptFailure(context, error),
             emitIncomingMessage: (event: WaIncomingMessageEvent) => {
                 void this.handleIncomingMessageEvent(event)
             },
@@ -288,6 +311,10 @@ export class WaClient extends EventEmitter {
                 handleIncomingMessageNode: async (node) =>
                     handleIncomingMessageAck(node, incomingMessageAckOptions),
                 sendNode,
+                handleIncomingRetryReceipt: async (node) =>
+                    this.retryCoordinator.handleIncomingRetryReceipt(node),
+                trackOutboundReceipt: async (node) =>
+                    this.retryCoordinator.trackOutboundReceipt(node),
                 emitIncomingReceipt: (event) => this.emit('incoming_receipt', event),
                 emitIncomingPresence: (event) => this.emit('incoming_presence', event),
                 emitIncomingChatstate: (event) => this.emit('incoming_chatstate', event),
@@ -733,6 +760,7 @@ export class WaClient extends EventEmitter {
     private async clearStoredState(): Promise<void> {
         await this.authClient.clearStoredCredentials()
         await this.appStateStore.clear()
+        await this.retryStore.clear()
     }
 
     private handleError(error: Error): void {

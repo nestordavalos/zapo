@@ -108,3 +108,16 @@ export function removeAt<T>(items: readonly T[], index: number): T[] {
     }
     return out
 }
+
+export function intToBytes(byteLength: number, value: number): Uint8Array {
+    if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error(`invalid integer value: ${value}`)
+    }
+    const out = new Uint8Array(byteLength)
+    let current = value
+    for (let i = byteLength - 1; i >= 0; i -= 1) {
+        out[i] = current & 0xff
+        current >>= 8
+    }
+    return out
+}

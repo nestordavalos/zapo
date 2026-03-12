@@ -2,6 +2,7 @@ import type { WaSignalMessagePublishInput, WaSendMessageOptions } from '@client/
 import { toSerializedPubKey } from '@crypto/core/keys'
 import type { Logger } from '@infra/log/types'
 import { resolveMessageTypeAttr } from '@message/content'
+import { wrapDeviceSentMessage } from '@message/device-sent'
 import { writeRandomPadMax16 } from '@message/padding'
 import type {
     WaEncryptedMessageInput,
@@ -19,38 +20,49 @@ import {
     normalizeDeviceJid,
     normalizeRecipientJid,
     parseSignalAddressFromJid,
+    splitJid,
     toUserJid
 } from '@protocol/jid'
+import { RETRY_OUTBOUND_TTL_MS } from '@retry/constants'
+import { encodeRetryReplayPayload } from '@retry/outbound'
+import { type WaRetryOutboundMessageRecord, type WaRetryReplayPayload } from '@retry/types'
 import type { SignalDeviceSyncApi } from '@signal/api/SignalDeviceSyncApi'
 import type { SignalSessionSyncApi } from '@signal/api/SignalSessionSyncApi'
 import type { SenderKeyManager } from '@signal/group/SenderKeyManager'
 import type { SignalProtocol } from '@signal/session/SignalProtocol'
 import type { SignalAddress } from '@signal/types'
+import type { WaRetryStore } from '@store/contracts/retry.store'
+import { encodeBinaryNode } from '@transport/binary'
 import { buildDirectMessageFanoutNode } from '@transport/node/builders/message'
 import type { BinaryNode } from '@transport/types'
 import { uint8Equal } from '@util/bytes'
+import { toError } from '@util/primitives'
 
 interface WaMessageDispatchCoordinatorOptions {
     readonly logger: Logger
     readonly messageClient: WaMessageClient
+    readonly retryStore: WaRetryStore
     readonly buildMessageContent: (content: WaSendMessageContent) => Promise<Proto.IMessage>
     readonly senderKeyManager: SenderKeyManager
     readonly signalProtocol: SignalProtocol
     readonly signalDeviceSync: SignalDeviceSyncApi
     readonly signalSessionSync: SignalSessionSyncApi
     readonly getCurrentMeJid: () => string | null | undefined
+    readonly getCurrentMeLid: () => string | null | undefined
     readonly getCurrentSignedIdentity: () => Proto.IADVSignedDeviceIdentity | null | undefined
 }
 
 export class WaMessageDispatchCoordinator {
     private readonly logger: Logger
     private readonly messageClient: WaMessageClient
+    private readonly retryStore: WaRetryStore
     private readonly buildMessageContent: (content: WaSendMessageContent) => Promise<Proto.IMessage>
     private readonly senderKeyManager: SenderKeyManager
     private readonly signalProtocol: SignalProtocol
     private readonly signalDeviceSync: SignalDeviceSyncApi
     private readonly signalSessionSync: SignalSessionSyncApi
     private readonly getCurrentMeJid: () => string | null | undefined
+    private readonly getCurrentMeLid: () => string | null | undefined
     private readonly getCurrentSignedIdentity: () =>
         | Proto.IADVSignedDeviceIdentity
         | null
@@ -59,12 +71,14 @@ export class WaMessageDispatchCoordinator {
     public constructor(options: WaMessageDispatchCoordinatorOptions) {
         this.logger = options.logger
         this.messageClient = options.messageClient
+        this.retryStore = options.retryStore
         this.buildMessageContent = options.buildMessageContent
         this.senderKeyManager = options.senderKeyManager
         this.signalProtocol = options.signalProtocol
         this.signalDeviceSync = options.signalDeviceSync
         this.signalSessionSync = options.signalSessionSync
         this.getCurrentMeJid = options.getCurrentMeJid
+        this.getCurrentMeLid = options.getCurrentMeLid
         this.getCurrentSignedIdentity = options.getCurrentSignedIdentity
     }
 
@@ -77,7 +91,22 @@ export class WaMessageDispatchCoordinator {
             type: node.attrs.type,
             to: node.attrs.to
         })
-        return this.messageClient.publishNode(node, options)
+        const messageType = node.attrs.type ?? 'text'
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'opaque_node',
+            node: encodeBinaryNode(node)
+        }
+        return this.publishWithRetryTracking(
+            {
+                messageIdHint: node.attrs.id,
+                toJid: node.attrs.to,
+                participantJid: node.attrs.participant,
+                recipientJid: node.attrs.recipient,
+                messageType,
+                replayPayload
+            },
+            async () => this.messageClient.publishNode(node, options)
+        )
     }
 
     public async publishEncryptedMessage(
@@ -89,7 +118,24 @@ export class WaMessageDispatchCoordinator {
             type: input.type,
             encType: input.encType
         })
-        return this.messageClient.publishEncrypted(input, options)
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'encrypted',
+            to: input.to,
+            type: input.type ?? 'text',
+            encType: input.encType,
+            ciphertext: input.ciphertext,
+            participant: input.participant
+        }
+        return this.publishWithRetryTracking(
+            {
+                messageIdHint: input.id,
+                toJid: input.to,
+                participantJid: input.participant,
+                messageType: input.type ?? 'text',
+                replayPayload
+            },
+            async () => this.messageClient.publishEncrypted(input, options)
+        )
     }
 
     public async publishSignalMessage(
@@ -114,17 +160,34 @@ export class WaMessageDispatchCoordinator {
             paddedPlaintext,
             input.expectedIdentity
         )
-        return this.messageClient.publishEncrypted(
+        const messageType = input.type ?? 'text'
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'plaintext',
+            to: input.to,
+            type: messageType,
+            plaintext: paddedPlaintext
+        }
+        return this.publishWithRetryTracking(
             {
-                to: input.to,
-                encType: encrypted.type,
-                ciphertext: encrypted.ciphertext,
-                id: input.id,
-                type: input.type,
-                participant: input.participant,
-                deviceFanout: input.deviceFanout
+                messageIdHint: input.id,
+                toJid: input.to,
+                participantJid: input.participant,
+                messageType,
+                replayPayload
             },
-            options
+            async () =>
+                this.messageClient.publishEncrypted(
+                    {
+                        to: input.to,
+                        encType: encrypted.type,
+                        ciphertext: encrypted.ciphertext,
+                        id: input.id,
+                        type: input.type,
+                        participant: input.participant,
+                        deviceFanout: input.deviceFanout
+                    },
+                    options
+                )
         )
     }
 
@@ -143,29 +206,17 @@ export class WaMessageDispatchCoordinator {
         const type = resolveMessageTypeAttr(message)
 
         if (isGroupJid(recipientJid, WA_DEFAULTS.GROUP_SERVER)) {
-            const meJid = this.getCurrentMeJid()
-            if (!meJid) {
-                throw new Error('group send requires registered meJid')
-            }
-            const sender = parseSignalAddressFromJid(meJid)
-            const encrypted = await this.senderKeyManager.encryptGroupMessage(
-                recipientJid,
-                sender,
-                plaintext
-            )
-            return this.publishEncryptedMessage(
-                {
-                    to: recipientJid,
-                    encType: 'skmsg',
-                    ciphertext: encrypted.ciphertext,
-                    id: options.id,
-                    type
-                },
-                options
-            )
+            return this.publishGroupSenderKeyMessage(recipientJid, plaintext, type, options)
         }
 
-        return this.publishDirectSignalMessageWithFanout(recipientJid, plaintext, type, options)
+        const directRecipientJid = toUserJid(recipientJid)
+        return this.publishDirectSignalMessageWithFanout(
+            directRecipientJid,
+            message,
+            plaintext,
+            type,
+            options
+        )
     }
 
     public async syncSignalSession(jid: string, reasonIdentity = false): Promise<void> {
@@ -180,15 +231,178 @@ export class WaMessageDispatchCoordinator {
         await this.messageClient.sendReceipt(input)
     }
 
-    private async publishDirectSignalMessageWithFanout(
-        recipientJid: string,
+    private async publishWithRetryTracking(
+        args: {
+            readonly messageIdHint?: string
+            readonly toJid?: string
+            readonly participantJid?: string
+            readonly recipientJid?: string
+            readonly messageType: string
+            readonly replayPayload: WaRetryReplayPayload
+        },
+        publish: () => Promise<WaMessagePublishResult>
+    ): Promise<WaMessagePublishResult> {
+        const nowMs = Date.now()
+        const expiresAtMs = nowMs + RETRY_OUTBOUND_TTL_MS
+        const hintedMessageId = args.messageIdHint?.trim()
+        const resolvedToJid = this.resolveReplayToJid(args.toJid, args.replayPayload)
+        if (hintedMessageId) {
+            await this.safeUpsertRetryOutboundRecord(
+                this.createRetryOutboundRecord(
+                    hintedMessageId,
+                    resolvedToJid,
+                    args.participantJid,
+                    args.recipientJid,
+                    args.messageType,
+                    args.replayPayload,
+                    nowMs,
+                    nowMs,
+                    expiresAtMs
+                )
+            )
+        }
+
+        const result = await publish()
+        const persistedNowMs = Date.now()
+        await this.safeUpsertRetryOutboundRecord(
+            this.createRetryOutboundRecord(
+                result.id,
+                resolvedToJid,
+                args.participantJid,
+                args.recipientJid,
+                args.messageType,
+                args.replayPayload,
+                hintedMessageId ? nowMs : persistedNowMs,
+                persistedNowMs,
+                persistedNowMs + RETRY_OUTBOUND_TTL_MS
+            )
+        )
+        return result
+    }
+
+    private resolveReplayToJid(
+        toJid: string | undefined,
+        replayPayload: WaRetryReplayPayload
+    ): string {
+        if (toJid && toJid.length > 0) {
+            return toJid
+        }
+        if (replayPayload.mode === 'opaque_node') {
+            return ''
+        }
+        return replayPayload.to
+    }
+
+    private createRetryOutboundRecord(
+        messageId: string,
+        toJid: string,
+        participantJid: string | undefined,
+        recipientJid: string | undefined,
+        messageType: string,
+        replayPayload: WaRetryReplayPayload,
+        createdAtMs: number,
+        updatedAtMs: number,
+        expiresAtMs: number
+    ): WaRetryOutboundMessageRecord {
+        return {
+            messageId,
+            toJid,
+            participantJid,
+            recipientJid,
+            messageType,
+            replayMode: replayPayload.mode,
+            replayPayload: encodeRetryReplayPayload(replayPayload),
+            state: 'pending',
+            createdAtMs,
+            updatedAtMs,
+            expiresAtMs
+        }
+    }
+
+    private async safeUpsertRetryOutboundRecord(
+        record: WaRetryOutboundMessageRecord
+    ): Promise<void> {
+        try {
+            await this.retryStore.upsertOutboundMessage(record)
+        } catch (error) {
+            this.logger.warn('failed to persist retry outbound message record', {
+                messageId: record.messageId,
+                to: record.toJid,
+                mode: record.replayMode,
+                message: toError(error).message
+            })
+            return
+        }
+
+        try {
+            await this.retryStore.cleanupExpired(Date.now())
+        } catch (error) {
+            this.logger.warn('failed to cleanup retry records after outbound persist', {
+                message: toError(error).message
+            })
+        }
+    }
+
+    private async publishGroupSenderKeyMessage(
+        groupJid: string,
         plaintext: Uint8Array,
         type: string,
         options: WaSendMessageOptions
     ): Promise<WaMessagePublishResult> {
         const meJid = this.requireCurrentMeJid('sendMessage')
-        const deviceJids = await this.resolveDirectFanoutDeviceJids(recipientJid, meJid)
+        const sender = parseSignalAddressFromJid(meJid)
+        const encrypted = await this.senderKeyManager.encryptGroupMessage(
+            groupJid,
+            sender,
+            plaintext
+        )
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'plaintext',
+            to: groupJid,
+            type,
+            plaintext
+        }
+        return this.publishWithRetryTracking(
+            {
+                messageIdHint: options.id,
+                toJid: groupJid,
+                messageType: type,
+                replayPayload
+            },
+            async () =>
+                this.messageClient.publishEncrypted(
+                    {
+                        to: groupJid,
+                        encType: 'skmsg',
+                        ciphertext: encrypted.ciphertext,
+                        id: options.id,
+                        type
+                    },
+                    options
+                )
+        )
+    }
+
+    private async publishDirectSignalMessageWithFanout(
+        recipientJid: string,
+        message: Proto.IMessage,
+        plaintext: Uint8Array,
+        type: string,
+        options: WaSendMessageOptions
+    ): Promise<WaMessagePublishResult> {
+        const meJid = this.requireCurrentMeJid('sendMessage')
+        const meLid = this.getCurrentMeLid()
+        const selfDeviceJidForRecipient = this.resolveSelfDeviceJidForRecipient(
+            recipientJid,
+            meJid,
+            meLid
+        )
+        const deviceJids = await this.resolveDirectFanoutDeviceJids(
+            recipientJid,
+            selfDeviceJidForRecipient
+        )
         const recipientUserJid = toUserJid(recipientJid)
+        const meUserJid = toUserJid(selfDeviceJidForRecipient)
 
         this.logger.debug('wa client publish signal fanout', {
             to: recipientJid,
@@ -202,16 +416,28 @@ export class WaMessageDispatchCoordinator {
             readonly ciphertext: Uint8Array
         }[] = []
         let shouldAttachDeviceIdentity = false
+        let selfDevicePlaintext: Uint8Array | null = null
 
         for (let index = 0; index < deviceJids.length; index += 1) {
             const targetJid = deviceJids[index]
             const address = parseSignalAddressFromJid(targetJid)
+            const targetUserJid = toUserJid(targetJid)
+            let plaintextForTarget = plaintext
+            if (targetUserJid === meUserJid) {
+                if (!selfDevicePlaintext) {
+                    const wrapped = wrapDeviceSentMessage(message, recipientUserJid)
+                    selfDevicePlaintext = await writeRandomPadMax16(
+                        proto.Message.encode(wrapped).finish()
+                    )
+                }
+                plaintextForTarget = selfDevicePlaintext
+            }
             const expectedIdentity =
-                toUserJid(targetJid) === recipientUserJid ? options.expectedIdentity : undefined
+                targetUserJid === recipientUserJid ? options.expectedIdentity : undefined
             await this.ensureSignalSession(address, targetJid, expectedIdentity)
             const encrypted = await this.signalProtocol.encryptMessage(
                 address,
-                plaintext,
+                plaintextForTarget,
                 expectedIdentity
             )
             participants.push({
@@ -235,15 +461,29 @@ export class WaMessageDispatchCoordinator {
             deviceIdentity
         })
 
-        return this.messageClient.publishNode(messageNode, options)
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'plaintext',
+            to: recipientJid,
+            type,
+            plaintext
+        }
+        return this.publishWithRetryTracking(
+            {
+                messageIdHint: options.id ?? messageNode.attrs.id,
+                toJid: recipientJid,
+                messageType: type,
+                replayPayload
+            },
+            async () => this.messageClient.publishNode(messageNode, options)
+        )
     }
 
     private async resolveDirectFanoutDeviceJids(
         recipientJid: string,
-        meJid: string
+        selfDeviceJidForRecipient: string
     ): Promise<readonly string[]> {
         const recipientUserJid = toUserJid(recipientJid)
-        const meUserJid = toUserJid(meJid)
+        const meUserJid = toUserJid(selfDeviceJidForRecipient)
         const targets =
             recipientUserJid === meUserJid ? [recipientUserJid] : [recipientUserJid, meUserJid]
 
@@ -264,7 +504,7 @@ export class WaMessageDispatchCoordinator {
             }
 
             const meDevices = byUser.get(meUserJid) ?? []
-            const normalizedMeJid = normalizeDeviceJid(meJid)
+            const normalizedMeJid = normalizeDeviceJid(selfDeviceJidForRecipient)
             for (let index = 0; index < meDevices.length; index += 1) {
                 const deviceJid = meDevices[index]
                 if (normalizeDeviceJid(deviceJid) === normalizedMeJid) {
@@ -285,6 +525,20 @@ export class WaMessageDispatchCoordinator {
             })
             return [recipientUserJid]
         }
+    }
+
+    private resolveSelfDeviceJidForRecipient(
+        recipientJid: string,
+        meJid: string,
+        meLid: string | null | undefined
+    ): string {
+        if (splitJid(recipientJid).server !== 'lid') {
+            return meJid
+        }
+        if (!meLid || !meLid.includes('@')) {
+            return meJid
+        }
+        return meLid
     }
 
     private getEncodedSignedDeviceIdentity(): Uint8Array {

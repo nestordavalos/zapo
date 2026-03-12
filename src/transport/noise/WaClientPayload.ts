@@ -9,20 +9,7 @@ import type {
     WaPayloadCommonConfig,
     WaRegistrationPayloadConfig
 } from '@transport/noise/types'
-import { toBytesView } from '@util/bytes'
-
-function intToBytes(byteLength: number, value: number): Uint8Array {
-    if (!Number.isSafeInteger(value) || value < 0) {
-        throw new Error(`invalid integer value: ${value}`)
-    }
-    const out = new Uint8Array(byteLength)
-    let current = value
-    for (let i = byteLength - 1; i >= 0; i -= 1) {
-        out[i] = current & 0xff
-        current >>= 8
-    }
-    return out
-}
+import { intToBytes, toBytesView } from '@util/bytes'
 
 function parseVersion(versionBase: string): {
     primary: number

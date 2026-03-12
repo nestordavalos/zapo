@@ -1,5 +1,6 @@
 import type { WaAppStateStore } from '@store/contracts/appstate.store'
 import type { WaAuthStore } from '@store/contracts/auth.store'
+import type { WaRetryStore } from '@store/contracts/retry.store'
 import type { WaSenderKeyStore } from '@store/contracts/sender-key.store'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 
@@ -29,6 +30,7 @@ export interface WaStoreSession {
     readonly signal: WaSignalStore
     readonly senderKey: WaSenderKeyStore
     readonly appState: WaAppStateStore
+    readonly retry: WaRetryStore
 }
 
 export interface WaStore {
@@ -40,6 +42,7 @@ export interface WaStoreProviderSelection {
     readonly signal?: 'sqlite' | 'memory'
     readonly senderKey?: 'sqlite' | 'memory'
     readonly appState?: 'sqlite' | 'memory'
+    readonly retry?: 'sqlite' | 'memory'
 }
 
 export type WaStoreDomainValueOrFactory<T> = T | ((sessionId: string) => T)
@@ -49,6 +52,7 @@ export interface WaCreateStoreCustomProviders {
     readonly signal?: WaStoreDomainValueOrFactory<WaSignalStore>
     readonly senderKey?: WaStoreDomainValueOrFactory<WaSenderKeyStore>
     readonly appState?: WaStoreDomainValueOrFactory<WaAppStateStore>
+    readonly retry?: WaStoreDomainValueOrFactory<WaRetryStore>
 }
 
 export interface WaCreateStoreOptions {

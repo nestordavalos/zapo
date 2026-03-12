@@ -19,7 +19,9 @@ export {
     buildDirectMessageFanoutNode,
     buildInboundDeliveryReceiptNode,
     buildInboundMessageAckNode,
+    buildInboundReceiptAckNode,
     buildInboundRetryReceiptNode,
     buildInboundRetryReceiptAckNode
 } from '@transport/node/builders/message'
+export { buildRetryAckNode, buildRetryReceiptNode } from '@transport/node/builders/retry'
 export { buildPreKeyUploadIq, intToBigEndianBytes } from '@transport/node/builders/prekeys'
