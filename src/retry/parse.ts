@@ -83,7 +83,10 @@ function parseRetryKeyBundle(node: BinaryNode | undefined): WaRetryKeyBundle | u
             'retry.keys.identity'
         ),
         deviceIdentity: deviceIdentityNode
-            ? decodeNodeContentBase64OrBytes(deviceIdentityNode.content, 'retry.keys.device-identity')
+            ? decodeNodeContentBase64OrBytes(
+                  deviceIdentityNode.content,
+                  'retry.keys.device-identity'
+              )
             : undefined,
         key:
             keyIdNode && keyValueNode

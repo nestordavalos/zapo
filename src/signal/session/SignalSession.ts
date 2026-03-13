@@ -182,18 +182,12 @@ export function findMatchingSession(
         return null
     }
     const serializedBaseKey = toSerializedPubKey(sessionBaseKey)
-    if (
-        session.aliceBaseKey &&
-        uint8Equal(session.aliceBaseKey, serializedBaseKey)
-    ) {
+    if (session.aliceBaseKey && uint8Equal(session.aliceBaseKey, serializedBaseKey)) {
         return session
     }
     for (let index = 0; index < session.prevSessions.length; index += 1) {
         const prev = session.prevSessions[index]
-        if (
-            prev.aliceBaseKey &&
-            uint8Equal(prev.aliceBaseKey, serializedBaseKey)
-        ) {
+        if (prev.aliceBaseKey && uint8Equal(prev.aliceBaseKey, serializedBaseKey)) {
             const promoted = snapshotToRecord(prev)
             return setPrevSessions(promoted, [
                 detachSession(session),

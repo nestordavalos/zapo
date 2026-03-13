@@ -444,11 +444,7 @@ export class WaWebSocket {
 
     private createRawSocket(url: string): RawWebSocket {
         const headers = this.config.headers
-        if (
-            this.socketRuntime === 'node' &&
-            headers &&
-            Object.keys(headers).length > 0
-        ) {
+        if (this.socketRuntime === 'node' && headers && Object.keys(headers).length > 0) {
             return new this.webSocketCtor(url, this.config.protocols, { headers })
         }
         return new this.webSocketCtor(url, this.config.protocols)

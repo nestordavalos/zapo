@@ -1,7 +1,4 @@
-import type {
-    WaRetryOutboundMessageRecord,
-    WaRetryOutboundState
-} from '@retry/types'
+import type { WaRetryOutboundMessageRecord, WaRetryOutboundState } from '@retry/types'
 import type { WaRetryStore } from '@store/contracts/retry.store'
 
 interface RetryInboundCounterRecord {
@@ -22,7 +19,9 @@ export class WaRetryMemoryStore implements WaRetryStore {
         this.outboundMessages.set(record.messageId, record)
     }
 
-    public async getOutboundMessage(messageId: string): Promise<WaRetryOutboundMessageRecord | null> {
+    public async getOutboundMessage(
+        messageId: string
+    ): Promise<WaRetryOutboundMessageRecord | null> {
         return this.outboundMessages.get(messageId) ?? null
     }
 

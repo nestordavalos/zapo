@@ -33,7 +33,10 @@ export function createStreamControlHandler(
 
     let lifecyclePromise: Promise<void> | null = null
 
-    const runStreamControlLifecycle = (reason: string, action: () => Promise<void>): Promise<void> => {
+    const runStreamControlLifecycle = (
+        reason: string,
+        action: () => Promise<void>
+    ): Promise<void> => {
         if (lifecyclePromise) {
             logger.debug('stream-control lifecycle already running', { reason })
             return lifecyclePromise
@@ -120,4 +123,3 @@ export function createStreamControlHandler(
             })
     }
 }
-

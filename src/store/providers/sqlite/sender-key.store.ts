@@ -16,10 +16,7 @@ import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 import type { WaSqliteStorageOptions } from '@store/types'
 import { asNumber, asString } from '@util/coercion'
 
-export class SenderKeySqliteStore
-    extends BaseSqliteStore
-    implements WaSenderKeyStoreContract
-{
+export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKeyStoreContract {
     public constructor(options: WaSqliteStorageOptions) {
         super(options, ['senderKey'])
     }
@@ -223,5 +220,4 @@ export class SenderKeySqliteStore
         )
         return count
     }
-
 }

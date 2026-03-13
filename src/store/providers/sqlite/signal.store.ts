@@ -26,10 +26,7 @@ import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 import type { WaSqliteStorageOptions } from '@store/types'
 import { asNumber, toBoolOrUndef } from '@util/coercion'
 
-export class WaSignalSqliteStore
-    extends BaseSqliteStore
-    implements WaSignalStoreContract
-{
+export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStoreContract {
     public constructor(options: WaSqliteStorageOptions) {
         super(options, ['signal'])
     }
@@ -378,5 +375,4 @@ export class WaSignalSqliteStore
             nextPreKeyId: asNumber(row.next_prekey_id, 'signal_meta.next_prekey_id')
         }
     }
-
 }

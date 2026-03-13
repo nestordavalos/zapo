@@ -23,10 +23,7 @@ export function mapRetryReasonFromError(error: unknown): WaRetryReasonCode {
     if (message.includes('invalid signature')) {
         return RETRY_REASON.SignalErrorInvalidSignature
     }
-    if (
-        message.includes('too many messages in future') ||
-        message.includes('future message')
-    ) {
+    if (message.includes('too many messages in future') || message.includes('future message')) {
         return RETRY_REASON.SignalErrorFutureMessage
     }
     if (message.includes('invalid mac')) {

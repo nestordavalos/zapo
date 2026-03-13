@@ -1,6 +1,9 @@
 import type { Proto } from '@proto'
 
-export function wrapDeviceSentMessage(message: Proto.IMessage, destinationJid: string): Proto.IMessage {
+export function wrapDeviceSentMessage(
+    message: Proto.IMessage,
+    destinationJid: string
+): Proto.IMessage {
     if (!destinationJid || destinationJid.trim().length === 0) {
         throw new Error('device sent destinationJid must be a non-empty string')
     }

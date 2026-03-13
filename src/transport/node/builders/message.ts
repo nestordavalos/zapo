@@ -130,8 +130,7 @@ export function buildInboundRetryReceiptNode(
     if (meJid) {
         attrs.from = meJid
     }
-    const normalizedRetryCount =
-        Number.isSafeInteger(retryCount) && retryCount > 0 ? retryCount : 1
+    const normalizedRetryCount = Number.isSafeInteger(retryCount) && retryCount > 0 ? retryCount : 1
     const retryAttrs: Record<string, string> = {
         count: String(normalizedRetryCount),
         id

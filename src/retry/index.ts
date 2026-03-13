@@ -28,4 +28,8 @@ export {
     encodeRetryReplayPayload,
     pickRetryStateMax
 } from '@retry/outbound'
-export { WaRetryReplayService, type WaRetryReplayServiceOptions, type WaRetryResendResult } from '@retry/replay'
+export {
+    WaRetryReplayService,
+    type WaRetryReplayServiceOptions,
+    type WaRetryResendResult
+} from '@retry/replay'

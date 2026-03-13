@@ -418,11 +418,7 @@ export class WaRetryCoordinator {
     ): Promise<boolean> {
         const address = parseSignalAddressFromJid(requesterJid)
         const currentSession = await this.signalStore.getSession(address)
-        if (
-            currentSession &&
-            request.regId > 0 &&
-            currentSession.remote.regId !== request.regId
-        ) {
+        if (currentSession && request.regId > 0 && currentSession.remote.regId !== request.regId) {
             await this.signalStore.deleteSession(address)
         }
         if (request.keyBundle) {

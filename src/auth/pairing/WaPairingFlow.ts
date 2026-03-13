@@ -194,7 +194,10 @@ export class WaPairingFlow {
             if (!refNode || !this.pairingSession?.ref) {
                 return true
             }
-            const ref = decodeNodeContentUtf8OrBytes(refNode.content, 'refresh_code.link_code_pairing_ref')
+            const ref = decodeNodeContentUtf8OrBytes(
+                refNode.content,
+                'refresh_code.link_code_pairing_ref'
+            )
             if (uint8Equal(ref, this.pairingSession.ref)) {
                 this.opts.logger.info('received pairing refresh notification', {
                     forceManualRefresh: linkCodeNode.attrs.force_manual_refresh === 'true'
@@ -439,7 +442,10 @@ export class WaPairingFlow {
             throw new Error('primary_hello notification is missing fields')
         }
 
-        const ref = decodeNodeContentUtf8OrBytes(refNode.content, 'primary_hello.link_code_pairing_ref')
+        const ref = decodeNodeContentUtf8OrBytes(
+            refNode.content,
+            'primary_hello.link_code_pairing_ref'
+        )
         if (!pairingSession.ref || !uint8Equal(ref, pairingSession.ref)) {
             this.opts.logger.warn('primary_hello ref mismatch ignored')
             return
@@ -505,4 +511,3 @@ export class WaPairingFlow {
         return credentials
     }
 }
-

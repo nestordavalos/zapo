@@ -19,10 +19,7 @@ const DEFAULT_APPSTATE_MEMORY_STORE_LIMITS = Object.freeze({
     collectionEntries: 50_000
 })
 
-function toBoundedMap<K, V>(
-    entries: Iterable<readonly [K, V]>,
-    maxEntries: number
-): Map<K, V> {
+function toBoundedMap<K, V>(entries: Iterable<readonly [K, V]>, maxEntries: number): Map<K, V> {
     const map = new Map<K, V>()
     for (const [key, value] of entries) {
         setBoundedMapEntry(map, key, value, maxEntries)

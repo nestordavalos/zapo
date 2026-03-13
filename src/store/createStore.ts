@@ -32,8 +32,7 @@ function resolveStoreValue<T>(
     if (!value) {
         return null
     }
-    const resolved =
-        typeof value === 'function' ? (value as (id: string) => T)(sessionId) : value
+    const resolved = typeof value === 'function' ? (value as (id: string) => T)(sessionId) : value
     if (!resolved) {
         throw new Error(`custom.${domain} must resolve to a store instance`)
     }

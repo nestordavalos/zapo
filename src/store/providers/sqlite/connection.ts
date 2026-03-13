@@ -271,9 +271,7 @@ export async function openSqliteConnection(
     }
 
     const created =
-        driver === 'bun'
-            ? openBunSqlite(normalizedOptions)
-            : openBetterSqlite(normalizedOptions)
+        driver === 'bun' ? openBunSqlite(normalizedOptions) : openBetterSqlite(normalizedOptions)
     const guarded = created.catch((error) => {
         SQLITE_CONNECTION_CACHE.delete(cacheKey)
         throw error
@@ -282,10 +280,7 @@ export async function openSqliteConnection(
     return guarded
 }
 
-function buildConnectionCacheKey(
-    options: WaSqliteStorageOptions,
-    driver: WaSqliteDriver
-): string {
+function buildConnectionCacheKey(options: WaSqliteStorageOptions, driver: WaSqliteDriver): string {
     const pragmas = Object.entries(options.pragmas ?? {})
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, value]) => `${key}=${String(value)}`)

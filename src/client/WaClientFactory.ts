@@ -114,7 +114,8 @@ export function resolveWaClientBase(options: WaClientOptions, logger: Logger): W
         keepAliveIntervalMs: options.keepAliveIntervalMs ?? WA_DEFAULTS.HEALTH_CHECK_INTERVAL_MS,
         deadSocketTimeoutMs: options.deadSocketTimeoutMs ?? WA_DEFAULTS.DEAD_SOCKET_TIMEOUT_MS,
         mediaTimeoutMs: options.mediaTimeoutMs ?? WA_DEFAULTS.MEDIA_TIMEOUT_MS,
-        appStateSyncTimeoutMs: options.appStateSyncTimeoutMs ?? WA_DEFAULTS.APP_STATE_SYNC_TIMEOUT_MS,
+        appStateSyncTimeoutMs:
+            options.appStateSyncTimeoutMs ?? WA_DEFAULTS.APP_STATE_SYNC_TIMEOUT_MS,
         signalFetchKeyBundlesTimeoutMs:
             options.signalFetchKeyBundlesTimeoutMs ??
             WA_DEFAULTS.SIGNAL_FETCH_KEY_BUNDLES_TIMEOUT_MS,
@@ -263,7 +264,9 @@ export function buildWaClientDependencies(input: {
         onDecryptFailure: (context: WaRetryDecryptFailureContext, error: unknown) =>
             retryCoordinator.onDecryptFailure(context, error),
         emitIncomingMessage: (event: WaIncomingMessageEvent) => {
-            void host.handleIncomingMessageEvent(event).catch((err) => host.handleError(toError(err)))
+            void host
+                .handleIncomingMessageEvent(event)
+                .catch((err) => host.handleError(toError(err)))
         },
         emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) =>
             host.emitEvent('incoming_unhandled_stanza', event)
@@ -282,7 +285,8 @@ export function buildWaClientDependencies(input: {
         logger,
         runtime: {
             handleStreamControlResult: streamControl.handleStreamControlResult,
-            persistSuccessAttributes: (attributes) => authClient.persistSuccessAttributes(attributes),
+            persistSuccessAttributes: (attributes) =>
+                authClient.persistSuccessAttributes(attributes),
             emitSuccessNode: (node) => host.emitEvent('success', node),
             updateClockSkewFromSuccess: host.updateClockSkewFromSuccess,
             shouldWarmupMediaConn: () => {
@@ -312,7 +316,8 @@ export function buildWaClientDependencies(input: {
             emitIncomingFailure: (event) => host.emitEvent('incoming_failure', event),
             emitIncomingErrorStanza: (event) => host.emitEvent('incoming_error_stanza', event),
             emitIncomingNotification: (event) => host.emitEvent('incoming_notification', event),
-            emitUnhandledIncomingNode: (event) => host.emitEvent('incoming_unhandled_stanza', event),
+            emitUnhandledIncomingNode: (event) =>
+                host.emitEvent('incoming_unhandled_stanza', event),
             disconnect: host.disconnect,
             clearStoredCredentials: host.clearStoredState,
             parseDirtyBits: (nodes) => parseDirtyBits(nodes, logger),
@@ -354,4 +359,3 @@ export function buildWaClientDependencies(input: {
         passiveTasks
     }
 }
-

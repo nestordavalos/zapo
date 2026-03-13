@@ -326,7 +326,9 @@ export class WaNoiseSession {
         }
         const serverEphemeral = toBytesView(serverHello.ephemeral)
         await handshake.authenticate(serverEphemeral)
-        await handshake.mixIntoKey(await X25519.scalarMult(ephemeralKeyPair.privKey, serverEphemeral))
+        await handshake.mixIntoKey(
+            await X25519.scalarMult(ephemeralKeyPair.privKey, serverEphemeral)
+        )
         await handshake.mixIntoKey(
             await X25519.scalarMult(clientStaticKeyPair.privKey, serverEphemeral)
         )

@@ -286,7 +286,12 @@ export class WaAppStateCrypto {
         }
         const expandedValues = await Promise.all(
             values.map((value) =>
-                hkdf(value, null, WA_APP_STATE_KDF_INFO.PATCH_INTEGRITY, APP_STATE_EMPTY_LT_HASH.byteLength)
+                hkdf(
+                    value,
+                    null,
+                    WA_APP_STATE_KDF_INFO.PATCH_INTEGRITY,
+                    APP_STATE_EMPTY_LT_HASH.byteLength
+                )
             )
         )
         const out = new Uint8Array(base.byteLength)

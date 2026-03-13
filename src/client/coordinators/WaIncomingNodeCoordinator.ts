@@ -118,9 +118,7 @@ export class WaIncomingNodeCoordinator {
         this.runtime.emitUnhandledIncomingNode(createUnhandledIncomingNodeEvent(node))
     }
 
-    public registerIncomingHandler(
-        registration: WaIncomingNodeHandlerRegistration
-    ): () => void {
+    public registerIncomingHandler(registration: WaIncomingNodeHandlerRegistration): () => void {
         const handlersByTag = this.nodeHandlerRegistry.get(registration.tag)
         const entry: IncomingNodeHandlerRegistryEntry = {
             subtype: registration.subtype,
@@ -138,17 +136,14 @@ export class WaIncomingNodeCoordinator {
         }
     }
 
-    public unregisterIncomingHandler(
-        registration: WaIncomingNodeHandlerRegistration
-    ): boolean {
+    public unregisterIncomingHandler(registration: WaIncomingNodeHandlerRegistration): boolean {
         const handlersByTag = this.nodeHandlerRegistry.get(registration.tag)
         if (!handlersByTag || handlersByTag.length === 0) {
             return false
         }
         const index = handlersByTag.findIndex(
             (entry) =>
-                entry.subtype === registration.subtype &&
-                entry.handler === registration.handler
+                entry.subtype === registration.subtype && entry.handler === registration.handler
         )
         if (index === -1) {
             return false
@@ -214,14 +209,20 @@ export class WaIncomingNodeCoordinator {
         const incomingNodeHandlerOptions = {
             logger: this.logger,
             sendNode: (node: BinaryNode) => this.runtime.sendNode(node),
-            handleIncomingRetryReceipt: (node: BinaryNode) => this.runtime.handleIncomingRetryReceipt(node),
+            handleIncomingRetryReceipt: (node: BinaryNode) =>
+                this.runtime.handleIncomingRetryReceipt(node),
             trackOutboundReceipt: (node: BinaryNode) => this.runtime.trackOutboundReceipt(node),
-            emitIncomingReceipt: (event: WaIncomingReceiptEvent) => this.runtime.emitIncomingReceipt(event),
-            emitIncomingPresence: (event: WaIncomingPresenceEvent) => this.runtime.emitIncomingPresence(event),
-            emitIncomingChatstate: (event: WaIncomingChatstateEvent) => this.runtime.emitIncomingChatstate(event),
+            emitIncomingReceipt: (event: WaIncomingReceiptEvent) =>
+                this.runtime.emitIncomingReceipt(event),
+            emitIncomingPresence: (event: WaIncomingPresenceEvent) =>
+                this.runtime.emitIncomingPresence(event),
+            emitIncomingChatstate: (event: WaIncomingChatstateEvent) =>
+                this.runtime.emitIncomingChatstate(event),
             emitIncomingCall: (event: WaIncomingCallEvent) => this.runtime.emitIncomingCall(event),
-            emitIncomingFailure: (event: WaIncomingFailureEvent) => this.runtime.emitIncomingFailure(event),
-            emitIncomingErrorStanza: (event: WaIncomingBaseEvent) => this.runtime.emitIncomingErrorStanza(event),
+            emitIncomingFailure: (event: WaIncomingFailureEvent) =>
+                this.runtime.emitIncomingFailure(event),
+            emitIncomingErrorStanza: (event: WaIncomingBaseEvent) =>
+                this.runtime.emitIncomingErrorStanza(event),
             emitIncomingNotification: (event: WaIncomingNotificationEvent) =>
                 this.runtime.emitIncomingNotification(event),
             emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) =>
@@ -402,4 +403,3 @@ export class WaIncomingNodeCoordinator {
         }
     }
 }
-

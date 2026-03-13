@@ -234,7 +234,10 @@ function hasMigration(db: WaSqliteConnection, id: string): boolean {
     return !!row
 }
 
-function hasDomain(domainSet: ReadonlySet<WaSqliteMigrationDomain>, migration: WaSqliteMigration): boolean {
+function hasDomain(
+    domainSet: ReadonlySet<WaSqliteMigrationDomain>,
+    migration: WaSqliteMigration
+): boolean {
     return domainSet.has(migration.domain)
 }
 

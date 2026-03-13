@@ -164,7 +164,12 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
     }
 
     public async setSession(address: SignalAddress, session: SignalSessionRecord): Promise<void> {
-        setBoundedMapEntry(this.signalSessions, signalAddressKey(address), session, this.maxSessions)
+        setBoundedMapEntry(
+            this.signalSessions,
+            signalAddressKey(address),
+            session,
+            this.maxSessions
+        )
     }
 
     public async deleteSession(address: SignalAddress): Promise<void> {
@@ -197,5 +202,4 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
             this.uploadedPreKeys.delete(oldest)
         }
     }
-
 }

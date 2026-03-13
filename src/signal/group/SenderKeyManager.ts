@@ -9,16 +9,10 @@ import {
     X25519
 } from '@crypto'
 import { proto } from '@proto'
-import {
-    SIGNAL_GROUP_VERSION,
-    SIGNATURE_SIZE
-} from '@signal/constants'
+import { SIGNAL_GROUP_VERSION, SIGNATURE_SIZE } from '@signal/constants'
 import { WaAdvSignature } from '@signal/crypto/WaAdvSignature'
 import { deriveSenderKeyMsgKey, selectMessageKey } from '@signal/group/SenderKeyChain'
-import {
-    parseDistributionPayload,
-    parseSenderKeyMessage
-} from '@signal/group/SenderKeyCodec'
+import { parseDistributionPayload, parseSenderKeyMessage } from '@signal/group/SenderKeyCodec'
 import type { SenderKeyRecord, SignalAddress } from '@signal/types'
 import type { WaSenderKeyStore } from '@store/contracts/sender-key.store'
 import { concatBytes } from '@util/bytes'

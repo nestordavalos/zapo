@@ -271,10 +271,17 @@ export class WaAppStateSyncClient {
     private async syncCollectionsRound(
         context: WaAppStateSyncContext,
         collections: readonly AppStateCollectionName[],
-        pendingByCollection: ReadonlyMap<AppStateCollectionName, readonly WaAppStateMutationInput[]>,
+        pendingByCollection: ReadonlyMap<
+            AppStateCollectionName,
+            readonly WaAppStateMutationInput[]
+        >,
         options: WaAppStateSyncOptions
     ): Promise<SyncRoundResult> {
-        const prepared = await this.prepareSyncRoundRequest(context, collections, pendingByCollection)
+        const prepared = await this.prepareSyncRoundRequest(
+            context,
+            collections,
+            pendingByCollection
+        )
         const iqNode = this.buildSyncIqNode(prepared.collectionNodes)
         const payloadByCollection = await this.fetchSyncPayloadByCollection(
             iqNode,
@@ -349,10 +356,13 @@ export class WaAppStateSyncClient {
         if (pendingMutations.length > 0) {
             if (!hasPersistedState) {
                 skippedUpload = true
-                this.logger.debug('app-state skipped outgoing patch upload until snapshot bootstrap', {
-                    collection,
-                    pendingMutations: pendingMutations.length
-                })
+                this.logger.debug(
+                    'app-state skipped outgoing patch upload until snapshot bootstrap',
+                    {
+                        collection,
+                        pendingMutations: pendingMutations.length
+                    }
+                )
             } else {
                 const outgoing = await this.buildOutgoingPatch(
                     context,
@@ -628,7 +638,10 @@ export class WaAppStateSyncClient {
         return Promise.all(
             sortedPatches.map(async (patch) => {
                 let readyPatch = patch
-                if ((!readyPatch.mutations || readyPatch.mutations.length === 0) && readyPatch.externalMutations) {
+                if (
+                    (!readyPatch.mutations || readyPatch.mutations.length === 0) &&
+                    readyPatch.externalMutations
+                ) {
                     const downloader = options.downloadExternalBlob
                     if (!downloader) {
                         throw new Error(
@@ -691,7 +704,10 @@ export class WaAppStateSyncClient {
         return parsed
     }
 
-    private validatePatch(collection: AppStateCollectionName, patch: Proto.ISyncdPatch): Proto.ISyncdPatch {
+    private validatePatch(
+        collection: AppStateCollectionName,
+        patch: Proto.ISyncdPatch
+    ): Proto.ISyncdPatch {
         if (!patch.version?.version) {
             throw new Error(`patch for ${collection} is missing version`)
         }
@@ -761,7 +777,10 @@ export class WaAppStateSyncClient {
             })
         }
 
-        const ltHash = await this.crypto.ltHashAdd(APP_STATE_EMPTY_LT_HASH, Array.from(indexValueMap.values()))
+        const ltHash = await this.crypto.ltHashAdd(
+            APP_STATE_EMPTY_LT_HASH,
+            Array.from(indexValueMap.values())
+        )
         const expectedSnapshotMac = await this.crypto.generateSnapshotMac(
             keyData,
             ltHash,
@@ -921,7 +940,9 @@ export class WaAppStateSyncClient {
                 return {
                     collection,
                     operation:
-                        operationCode === proto.SyncdMutation.SyncdOperation.REMOVE ? 'remove' : 'set',
+                        operationCode === proto.SyncdMutation.SyncdOperation.REMOVE
+                            ? 'remove'
+                            : 'set',
                     operationCode,
                     index: decrypted.index,
                     value: decrypted.value,
@@ -1010,11 +1031,13 @@ export class WaAppStateSyncClient {
                 }
             })
         )
-        const macMutations: MacMutation[] = encryptedResults.map(({ operationCode, encrypted }) => ({
-            operation: operationCode,
-            indexMac: encrypted.indexMac,
-            valueMac: encrypted.valueMac
-        }))
+        const macMutations: MacMutation[] = encryptedResults.map(
+            ({ operationCode, encrypted }) => ({
+                operation: operationCode,
+                indexMac: encrypted.indexMac,
+                valueMac: encrypted.valueMac
+            })
+        )
 
         const nextState = await this.computeNextCollectionState(
             snapshot.hash,
@@ -1217,4 +1240,3 @@ export class WaAppStateSyncClient {
         )
     }
 }
-

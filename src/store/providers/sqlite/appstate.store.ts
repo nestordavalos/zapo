@@ -271,5 +271,4 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
             throw error
         }
     }
-
 }

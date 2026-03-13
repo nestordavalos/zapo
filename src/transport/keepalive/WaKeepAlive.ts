@@ -175,7 +175,7 @@ export class WaKeepAlive {
         if (jitterWindowMs <= 0) {
             return this.intervalMs
         }
-        const offsetMs = Math.floor((Math.random() * (jitterWindowMs * 2 + 1)) - jitterWindowMs)
+        const offsetMs = Math.floor(Math.random() * (jitterWindowMs * 2 + 1) - jitterWindowMs)
         return Math.max(1, this.intervalMs + offsetMs)
     }
 }

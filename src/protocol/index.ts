@@ -1,8 +1,4 @@
-export {
-    getWaCompanionPlatformId,
-    WA_BROWSERS,
-    WA_COMPANION_PLATFORM_IDS
-} from '@protocol/browser'
+export { getWaCompanionPlatformId, WA_BROWSERS, WA_COMPANION_PLATFORM_IDS } from '@protocol/browser'
 export { WA_SIGNALING, WA_PAIRING_KDF_INFO } from '@protocol/auth'
 export {
     WA_DISCONNECT_REASONS,
@@ -25,11 +21,7 @@ export {
     WA_APP_STATE_KEY_TYPES,
     WA_APP_STATE_SYNC_DATA_TYPE
 } from '@protocol/appstate'
-export {
-    getWaMediaHkdfInfo,
-    WA_MEDIA_HKDF_INFO,
-    WA_PREVIEW_MEDIA_HKDF_INFO
-} from '@protocol/media'
+export { getWaMediaHkdfInfo, WA_MEDIA_HKDF_INFO, WA_PREVIEW_MEDIA_HKDF_INFO } from '@protocol/media'
 export {
     WA_ACCOUNT_SYNC_PROTOCOLS,
     WA_DIRTY_PROTOCOLS,

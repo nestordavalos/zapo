@@ -1,7 +1,4 @@
-import type {
-    WaRetryOutboundMessageRecord,
-    WaRetryOutboundState
-} from '@retry/types'
+import type { WaRetryOutboundMessageRecord, WaRetryOutboundState } from '@retry/types'
 import type { WaRetryStore } from '@store/contracts/retry.store'
 import { BaseSqliteStore } from '@store/providers/sqlite/BaseSqliteStore'
 import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
@@ -80,7 +77,9 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
         )
     }
 
-    public async getOutboundMessage(messageId: string): Promise<WaRetryOutboundMessageRecord | null> {
+    public async getOutboundMessage(
+        messageId: string
+    ): Promise<WaRetryOutboundMessageRecord | null> {
         const db = await this.getConnection()
         const row = db.get<RetryOutboundRow>(
             `SELECT
@@ -118,23 +117,11 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
                 row.replay_mode,
                 'retry_outbound_messages.replay_mode'
             ) as WaRetryOutboundMessageRecord['replayMode'],
-            replayPayload: asBytes(
-                row.replay_payload,
-                'retry_outbound_messages.replay_payload'
-            ),
+            replayPayload: asBytes(row.replay_payload, 'retry_outbound_messages.replay_payload'),
             state: asString(row.state, 'retry_outbound_messages.state') as WaRetryOutboundState,
-            createdAtMs: asNumber(
-                row.created_at_ms,
-                'retry_outbound_messages.created_at_ms'
-            ),
-            updatedAtMs: asNumber(
-                row.updated_at_ms,
-                'retry_outbound_messages.updated_at_ms'
-            ),
-            expiresAtMs: asNumber(
-                row.expires_at_ms,
-                'retry_outbound_messages.expires_at_ms'
-            )
+            createdAtMs: asNumber(row.created_at_ms, 'retry_outbound_messages.created_at_ms'),
+            updatedAtMs: asNumber(row.updated_at_ms, 'retry_outbound_messages.updated_at_ms'),
+            expiresAtMs: asNumber(row.expires_at_ms, 'retry_outbound_messages.expires_at_ms')
         }
     }
 
@@ -192,16 +179,8 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
         const db = await this.getConnection()
         db.exec('BEGIN')
         try {
-            const outboundCount = this.countRows(
-                db,
-                'retry_outbound_messages',
-                nowMs
-            )
-            const inboundCount = this.countRows(
-                db,
-                'retry_inbound_counters',
-                nowMs
-            )
+            const outboundCount = this.countRows(db, 'retry_outbound_messages', nowMs)
+            const inboundCount = this.countRows(db, 'retry_inbound_counters', nowMs)
             db.run(
                 `DELETE FROM retry_outbound_messages
                  WHERE session_id = ? AND expires_at_ms <= ?`,
@@ -249,5 +228,4 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
         }
         return asNumber(row.total, `${table}.count`)
     }
-
 }

@@ -1,7 +1,4 @@
-import type {
-    WaRetryOutboundMessageRecord,
-    WaRetryOutboundState
-} from '@retry/types'
+import type { WaRetryOutboundMessageRecord, WaRetryOutboundState } from '@retry/types'
 
 export interface WaRetryStore {
     upsertOutboundMessage(record: WaRetryOutboundMessageRecord): Promise<void>
