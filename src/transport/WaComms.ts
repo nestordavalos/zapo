@@ -48,6 +48,7 @@ export class WaComms {
     private pendingFramesOverflowClosing: boolean
     private resumeInFlight: boolean
     private resumeHandshakeFailures: number
+    private usedResumeHandshake: boolean
     private noiseSession: WaNoiseSession | null
     private lastServerStaticKey: Uint8Array | null
     private frameProcessingQueue: Promise<void>
@@ -110,6 +111,7 @@ export class WaComms {
         this.pendingFramesOverflowClosing = false
         this.resumeInFlight = false
         this.resumeHandshakeFailures = 0
+        this.usedResumeHandshake = false
         this.noiseSession = null
         this.lastServerStaticKey = null
         this.frameProcessingQueue = Promise.resolve()
@@ -292,7 +294,9 @@ export class WaComms {
             ) {
                 this.preventRetry = true
                 this.started = false
-                this.rejectAllWaiters(new Error('max reconnect attempts reached'))
+                this.drainWaiters((waiter) =>
+                    waiter.reject(new Error('max reconnect attempts reached'))
+                )
                 return
             }
         }
@@ -387,13 +391,13 @@ export class WaComms {
 
     private async onSocketOpened(): Promise<void> {
         this.logger.debug('comms socket opened, starting noise session')
-        const { noiseConfig, usedResumeHandshake } = this.buildNoiseConfigForAttempt()
+        const noiseConfig = this.buildNoiseConfigForAttempt()
         const session = new WaNoiseSession(async (wire) => this.socket.send(wire), this.logger)
         this.noiseSession = session
         try {
             await session.start(noiseConfig)
         } catch (error) {
-            if (usedResumeHandshake) {
+            if (this.usedResumeHandshake) {
                 this.resumeHandshakeFailures += 1
                 this.logger.warn(
                     'noise resume handshake failed, next attempt may fallback to full',
@@ -413,7 +417,7 @@ export class WaComms {
         this.connected = true
         this.reconnectAttempts = 0
         this.logger.info('comms connected and noise session established')
-        this.resolveAllWaiters()
+        this.drainWaiters((waiter) => waiter.resolve())
     }
 
     private async flushPendingFrames(): Promise<void> {
@@ -535,22 +539,6 @@ export class WaComms {
         this.reconnectTimer = null
     }
 
-    private resolveAllWaiters(): void {
-        const waiters = this.waiters.splice(0, this.waiters.length)
-        for (const waiter of waiters) {
-            clearTimeout(waiter.timer)
-            waiter.resolve()
-        }
-    }
-
-    private rejectAllWaiters(error: Error): void {
-        const waiters = this.waiters.splice(0, this.waiters.length)
-        for (const waiter of waiters) {
-            clearTimeout(waiter.timer)
-            waiter.reject(error)
-        }
-    }
-
     private removeWaiter(reject: ConnectionWaiter['reject']): void {
         const index = this.waiters.findIndex((entry) => entry.reject === reject)
         if (index === -1) {
@@ -564,47 +552,33 @@ export class WaComms {
         headers: WaCommsConfig['headers']
     ): Readonly<Record<string, string>> {
         const out: Record<string, string> = headers ? { ...headers } : {}
-        const currentCookie = out.Cookie ?? out.cookie
-        if (currentCookie) {
-            if (currentCookie.includes('sticky_routing=')) {
-                return out
-            }
-            out.Cookie = `${currentCookie}; sticky_routing=`
-            delete out.cookie
+        const stickyCookie = out.Cookie ?? out.cookie ?? ''
+        delete out.cookie
+        if (stickyCookie.includes('sticky_routing=')) {
             return out
         }
-        out.Cookie = 'sticky_routing='
+        out.Cookie = stickyCookie ? `${stickyCookie}; sticky_routing=` : 'sticky_routing='
         return out
     }
 
-    private buildNoiseConfigForAttempt(): {
-        readonly noiseConfig: WaCommsConfig['noise']
-        readonly usedResumeHandshake: boolean
-    } {
-        const hasServerStaticKey =
-            this.config.noise.serverStaticKey !== null &&
-            this.config.noise.serverStaticKey !== undefined &&
-            this.config.noise.serverStaticKey.byteLength === 32
+    private buildNoiseConfigForAttempt(): WaCommsConfig['noise'] {
+        const hasServerStaticKey = this.config.noise.serverStaticKey?.byteLength === 32
         if (
             hasServerStaticKey &&
             this.resumeHandshakeFailures < WA_DEFAULTS.NOISE_RESUME_FAILURES_BEFORE_FULL_HANDSHAKE
         ) {
-            return {
-                noiseConfig: this.config.noise,
-                usedResumeHandshake: true
-            }
+            this.usedResumeHandshake = true
+            return this.config.noise
         }
         if (hasServerStaticKey) {
             this.logger.info('noise resume temporarily disabled after previous failure(s)', {
                 failures: this.resumeHandshakeFailures
             })
         }
+        this.usedResumeHandshake = false
         return {
-            noiseConfig: {
-                ...this.config.noise,
-                serverStaticKey: undefined
-            },
-            usedResumeHandshake: false
+            ...this.config.noise,
+            serverStaticKey: undefined
         }
     }
 
@@ -635,7 +609,16 @@ export class WaComms {
         }
         this.clearReconnectTimer()
         if (options.rejectWaitersError) {
-            this.rejectAllWaiters(options.rejectWaitersError)
+            const rejectWaitersError = options.rejectWaitersError
+            this.drainWaiters((waiter) => waiter.reject(rejectWaitersError))
+        }
+    }
+
+    private drainWaiters(drain: (waiter: ConnectionWaiter) => void): void {
+        const waiters = this.waiters.splice(0, this.waiters.length)
+        for (const waiter of waiters) {
+            clearTimeout(waiter.timer)
+            drain(waiter)
         }
     }
 }

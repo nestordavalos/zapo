@@ -5,6 +5,8 @@ export interface WaPayloadCommonConfig {
     readonly passive?: boolean
     readonly pull?: boolean
     readonly versionBase?: string
+    readonly deviceBrowser?: string
+    readonly deviceOsDisplayName?: string
     readonly userAgent?: typeof Proto.ClientPayload.prototype.userAgent
     readonly webInfo?: typeof Proto.ClientPayload.prototype.webInfo
 }
@@ -20,4 +22,5 @@ export interface WaRegistrationPayloadConfig extends WaPayloadCommonConfig {
     readonly signedPreKey: SignedPreKeyRecord
     readonly buildHash?: Uint8Array
     readonly deviceProps?: Uint8Array
+    readonly requireFullSync?: boolean
 }

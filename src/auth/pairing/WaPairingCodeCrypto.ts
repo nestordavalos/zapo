@@ -1,6 +1,5 @@
 import { CROCKFORD_ALPHABET, PBKDF2_ITERATIONS } from '@auth/pairing/constants'
 import {
-    type CryptoKey,
     aesCtrDecrypt,
     aesCtrEncrypt,
     aesGcmEncrypt,
@@ -13,18 +12,6 @@ import type { SignalKeyPair } from '@crypto/curves/types'
 import { X25519 } from '@crypto/curves/X25519'
 import { WA_PAIRING_KDF_INFO } from '@protocol/constants'
 import { concatBytes, TEXT_ENCODER } from '@util/bytes'
-
-interface CompanionHelloState {
-    readonly pairingCode: string
-    readonly companionEphemeralKeyPair: SignalKeyPair
-    readonly wrappedCompanionEphemeralPub: Uint8Array
-}
-
-interface CompanionFinishResult {
-    readonly wrappedKeyBundle: Uint8Array
-    readonly companionIdentityPublic: Uint8Array
-    readonly advSecret: Uint8Array
-}
 
 function bytesToCrockford(bytes: Uint8Array): string {
     let bitCount = 0
@@ -44,32 +31,21 @@ function bytesToCrockford(bytes: Uint8Array): string {
     return out
 }
 
-async function derivePairingCipher(code: string, salt: Uint8Array): Promise<CryptoKey> {
-    return pbkdf2DeriveAesCtrKey(TEXT_ENCODER.encode(code), salt, PBKDF2_ITERATIONS)
-}
-
-function splitWrappedPrimaryPayload(payload: Uint8Array): {
-    readonly salt: Uint8Array
-    readonly counter: Uint8Array
-    readonly ciphertext: Uint8Array
-} {
-    if (payload.length <= 48) {
-        throw new Error('invalid wrapped primary payload')
-    }
-    return {
-        salt: payload.subarray(0, 32),
-        counter: payload.subarray(32, 48),
-        ciphertext: payload.subarray(48)
-    }
-}
-
-export async function createCompanionHello(): Promise<CompanionHelloState> {
+export async function createCompanionHello(): Promise<{
+    readonly pairingCode: string
+    readonly companionEphemeralKeyPair: SignalKeyPair
+    readonly wrappedCompanionEphemeralPub: Uint8Array
+}> {
     const codeBytes = await randomBytesAsync(5)
     const pairingCode = bytesToCrockford(codeBytes)
     const companionEphemeralKeyPair = await X25519.generateKeyPair()
     const salt = await randomBytesAsync(32)
     const counter = await randomBytesAsync(16)
-    const cipher = await derivePairingCipher(pairingCode, salt)
+    const cipher = await pbkdf2DeriveAesCtrKey(
+        TEXT_ENCODER.encode(pairingCode),
+        salt,
+        PBKDF2_ITERATIONS
+    )
     const encrypted = await aesCtrEncrypt(cipher, counter, companionEphemeralKeyPair.pubKey)
 
     return {
@@ -85,13 +61,23 @@ export async function completeCompanionFinish(args: {
     readonly primaryIdentityPub: Uint8Array
     readonly companionEphemeralPrivKey: Uint8Array
     readonly registrationIdentityKeyPair: SignalKeyPair
-}): Promise<CompanionFinishResult> {
-    const wrapped = splitWrappedPrimaryPayload(args.wrappedPrimaryEphemeralPub)
-    const pairingCipher = await derivePairingCipher(args.pairingCode, wrapped.salt)
+}): Promise<{
+    readonly wrappedKeyBundle: Uint8Array
+    readonly companionIdentityPublic: Uint8Array
+    readonly advSecret: Uint8Array
+}> {
+    if (args.wrappedPrimaryEphemeralPub.length <= 48) {
+        throw new Error('invalid wrapped primary payload')
+    }
+    const pairingCipher = await pbkdf2DeriveAesCtrKey(
+        TEXT_ENCODER.encode(args.pairingCode),
+        args.wrappedPrimaryEphemeralPub.subarray(0, 32),
+        PBKDF2_ITERATIONS
+    )
     const primaryEphemeralPub = await aesCtrDecrypt(
         pairingCipher,
-        wrapped.counter,
-        wrapped.ciphertext
+        args.wrappedPrimaryEphemeralPub.subarray(32, 48),
+        args.wrappedPrimaryEphemeralPub.subarray(48)
     )
     if (primaryEphemeralPub.length === 0) {
         throw new Error('empty primary ephemeral public key')

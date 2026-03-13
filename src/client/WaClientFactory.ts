@@ -1,5 +1,9 @@
 import { WaAppStateSyncClient } from '@appstate/WaAppStateSyncClient'
 import { WaAuthClient } from '@auth/WaAuthClient'
+import {
+    createGroupCoordinator,
+    type WaGroupCoordinator
+} from '@client/coordinators/WaGroupCoordinator'
 import { WaIncomingNodeCoordinator } from '@client/coordinators/WaIncomingNodeCoordinator'
 import { WaMessageDispatchCoordinator } from '@client/coordinators/WaMessageDispatchCoordinator'
 import { WaPassiveTasksCoordinator } from '@client/coordinators/WaPassiveTasksCoordinator'
@@ -21,6 +25,7 @@ import type { WaMediaConn } from '@media/types'
 import { WaMediaTransferClient } from '@media/WaMediaTransferClient'
 import { handleIncomingMessageAck } from '@message/incoming'
 import { WaMessageClient } from '@message/WaMessageClient'
+import type { Proto } from '@proto'
 import { getWaCompanionPlatformId, WA_DEFAULTS } from '@protocol/constants'
 import type { WaRetryDecryptFailureContext } from '@retry/types'
 import { SignalDeviceSyncApi } from '@signal/api/SignalDeviceSyncApi'
@@ -35,17 +40,15 @@ import type { WaComms } from '@transport/WaComms'
 import { toError } from '@util/primitives'
 import { getRuntimeOsDisplayName } from '@util/runtime'
 
-type WaSessionStore = ReturnType<WaClientOptions['store']['session']>
+type WaMediaMessageBuildOptions = Parameters<typeof buildMediaMessageContent>[0]
 
-export type WaMediaMessageBuildOptions = Parameters<typeof buildMediaMessageContent>[0]
-
-export interface WaClientBase {
+interface WaClientBase {
     readonly options: Readonly<WaClientOptions>
     readonly logger: Logger
-    readonly sessionStore: WaSessionStore
+    readonly sessionStore: ReturnType<WaClientOptions['store']['session']>
 }
 
-export interface WaClientDependencies {
+interface WaClientDependencies {
     readonly nodeTransport: WaNodeTransport
     readonly nodeOrchestrator: WaNodeOrchestrator
     readonly keepAlive: WaKeepAlive
@@ -63,6 +66,7 @@ export interface WaClientDependencies {
     readonly streamControl: WaStreamControlHandler
     readonly incomingNode: WaIncomingNodeCoordinator
     readonly passiveTasks: WaPassiveTasksCoordinator
+    readonly groupCoordinator: WaGroupCoordinator
 }
 
 export interface WaClientDependencyHost {
@@ -131,6 +135,188 @@ export function resolveWaClientBase(options: WaClientOptions, logger: Logger): W
     }
 }
 
+function createAuthClient(input: {
+    readonly options: WaClientOptions
+    readonly logger: Logger
+    readonly sessionStore: ReturnType<WaClientOptions['store']['session']>
+    readonly host: WaClientDependencyHost
+}): WaAuthClient {
+    const { options, logger, sessionStore, host } = input
+    return new WaAuthClient(
+        {
+            deviceBrowser: options.deviceBrowser,
+            deviceOsDisplayName: options.deviceOsDisplayName,
+            devicePlatform: options.devicePlatform,
+            requireFullSync: options.requireFullSync
+        },
+        {
+            logger,
+            authStore: sessionStore.auth,
+            signalStore: sessionStore.signal,
+            socket: {
+                sendNode: host.sendNode,
+                query: host.query
+            },
+            callbacks: {
+                onQr: (qr, ttlMs) => host.emitEvent('qr', qr, ttlMs),
+                onPairingCode: (code) => host.emitEvent('pairing_code', code),
+                onPairingRefresh: (forceManual) => host.emitEvent('pairing_refresh', forceManual),
+                onPaired: (credentials) => {
+                    host.emitEvent('paired', credentials)
+                    host.scheduleReconnectAfterPairing()
+                },
+                onError: (error) => host.handleError(error)
+            }
+        }
+    )
+}
+
+function createCurrentAuthGetters(authClient: WaAuthClient): {
+    readonly getCurrentCredentials: () => ReturnType<WaAuthClient['getCurrentCredentials']>
+    readonly getCurrentMeJid: () => string | null | undefined
+    readonly getCurrentMeLid: () => string | null | undefined
+    readonly getCurrentSignedIdentity: () => Proto.IADVSignedDeviceIdentity | null | undefined
+} {
+    const getCurrentCredentials = () => authClient.getCurrentCredentials()
+    return {
+        getCurrentCredentials,
+        getCurrentMeJid: () => getCurrentCredentials()?.meJid,
+        getCurrentMeLid: () => getCurrentCredentials()?.meLid,
+        getCurrentSignedIdentity: () => getCurrentCredentials()?.signedIdentity
+    }
+}
+
+function createIncomingMessageAckOptions(input: {
+    readonly logger: Logger
+    readonly host: WaClientDependencyHost
+    readonly getCurrentMeJid: () => string | null | undefined
+    readonly signalProtocol: SignalProtocol
+    readonly senderKeyManager: SenderKeyManager
+    readonly retryCoordinator: WaRetryCoordinator
+}): Parameters<typeof handleIncomingMessageAck>[1] {
+    const { logger, host, getCurrentMeJid, signalProtocol, senderKeyManager, retryCoordinator } =
+        input
+    return {
+        logger,
+        sendNode: host.sendNode,
+        getMeJid: getCurrentMeJid,
+        signalProtocol,
+        senderKeyManager,
+        onDecryptFailure: (context: WaRetryDecryptFailureContext, error: unknown) =>
+            retryCoordinator.onDecryptFailure(context, error),
+        emitIncomingMessage: (event: WaIncomingMessageEvent) => {
+            void host
+                .handleIncomingMessageEvent(event)
+                .catch((err) => host.handleError(toError(err)))
+        },
+        emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) =>
+            host.emitEvent('incoming_unhandled_stanza', event)
+    }
+}
+
+function createHandleClientDirtyBits(input: {
+    readonly logger: Logger
+    readonly host: WaClientDependencyHost
+    readonly getCurrentCredentials: () => ReturnType<WaAuthClient['getCurrentCredentials']>
+}): (dirtyBits: Parameters<typeof handleDirtyBits>[1]) => Promise<void> {
+    const { logger, host, getCurrentCredentials } = input
+    return (dirtyBits) =>
+        handleDirtyBits(
+            {
+                logger,
+                queryWithContext: host.queryWithContext,
+                getCurrentCredentials,
+                syncAppState: host.syncAppState
+            },
+            dirtyBits
+        )
+}
+
+function createIncomingNodeRuntime(input: {
+    readonly logger: Logger
+    readonly host: WaClientDependencyHost
+    readonly authClient: WaAuthClient
+    readonly nodeOrchestrator: WaNodeOrchestrator
+    readonly streamControl: WaStreamControlHandler
+    readonly mediaMessageBuildOptions: WaMediaMessageBuildOptions
+    readonly retryCoordinator: WaRetryCoordinator
+    readonly getCurrentMeJid: () => string | null | undefined
+    readonly handleClientDirtyBits: (
+        dirtyBits: Parameters<typeof handleDirtyBits>[1]
+    ) => Promise<void>
+    readonly incomingMessageAckOptions: Parameters<typeof handleIncomingMessageAck>[1]
+}): ConstructorParameters<typeof WaIncomingNodeCoordinator>[0]['runtime'] {
+    const {
+        logger,
+        host,
+        authClient,
+        nodeOrchestrator,
+        streamControl,
+        mediaMessageBuildOptions,
+        retryCoordinator,
+        getCurrentMeJid,
+        handleClientDirtyBits,
+        incomingMessageAckOptions
+    } = input
+
+    return {
+        handleStreamControlResult: streamControl.handleStreamControlResult,
+        persistSuccessAttributes: (attributes) => authClient.persistSuccessAttributes(attributes),
+        emitSuccessNode: (node) => host.emitEvent('success', node),
+        updateClockSkewFromSuccess: host.updateClockSkewFromSuccess,
+        shouldWarmupMediaConn: () => {
+            const comms = host.getComms()
+            return !!(getCurrentMeJid() && comms && comms.getCommsState().connected)
+        },
+        warmupMediaConn: async () => {
+            await getClientMediaConn(mediaMessageBuildOptions, true)
+        },
+        persistRoutingInfo: (routingInfo) => authClient.persistRoutingInfo(routingInfo),
+        tryResolvePendingNode: (node) => nodeOrchestrator.tryResolvePending(node),
+        handleGenericIncomingNode: (node) => nodeOrchestrator.handleIncomingNode(node),
+        handleIncomingIqSetNode: (node) => authClient.handleIncomingIqSet(node),
+        handleLinkCodeNotificationNode: (node) => authClient.handleLinkCodeNotification(node),
+        handleCompanionRegRefreshNotificationNode: (node) =>
+            authClient.handleCompanionRegRefreshNotification(node),
+        handleIncomingMessageNode: (node) =>
+            handleIncomingMessageAck(node, incomingMessageAckOptions),
+        sendNode: host.sendNode,
+        handleIncomingRetryReceipt: (node) => retryCoordinator.handleIncomingRetryReceipt(node),
+        trackOutboundReceipt: (node) => retryCoordinator.trackOutboundReceipt(node),
+        emitIncomingReceipt: (event) => host.emitEvent('incoming_receipt', event),
+        emitIncomingPresence: (event) => host.emitEvent('incoming_presence', event),
+        emitIncomingChatstate: (event) => host.emitEvent('incoming_chatstate', event),
+        emitIncomingCall: (event) => host.emitEvent('incoming_call', event),
+        emitIncomingFailure: (event) => host.emitEvent('incoming_failure', event),
+        emitIncomingErrorStanza: (event) => host.emitEvent('incoming_error_stanza', event),
+        emitIncomingNotification: (event) => host.emitEvent('incoming_notification', event),
+        emitUnhandledIncomingNode: (event) => host.emitEvent('incoming_unhandled_stanza', event),
+        disconnect: host.disconnect,
+        clearStoredCredentials: host.clearStoredState,
+        parseDirtyBits: (nodes) => parseDirtyBits(nodes, logger),
+        handleDirtyBits: (dirtyBits) => handleClientDirtyBits(dirtyBits)
+    }
+}
+
+function createPassiveTasksRuntime(input: {
+    readonly host: WaClientDependencyHost
+    readonly authClient: WaAuthClient
+    readonly nodeOrchestrator: WaNodeOrchestrator
+    readonly getCurrentCredentials: () => ReturnType<WaAuthClient['getCurrentCredentials']>
+}): ConstructorParameters<typeof WaPassiveTasksCoordinator>[0]['runtime'] {
+    const { host, authClient, nodeOrchestrator, getCurrentCredentials } = input
+    return {
+        queryWithContext: host.queryWithContext,
+        getCurrentCredentials,
+        persistServerHasPreKeys: (serverHasPreKeys) =>
+            authClient.persistServerHasPreKeys(serverHasPreKeys),
+        sendNodeDirect: (node) => nodeOrchestrator.sendNode(node),
+        takeDanglingReceipts: host.takeDanglingReceipts,
+        requeueDanglingReceipt: host.enqueueDanglingReceipt,
+        shouldQueueDanglingReceipt: host.shouldQueueDanglingReceipt
+    }
+}
+
 export function buildWaClientDependencies(input: {
     readonly base: WaClientBase
     readonly host: WaClientDependencyHost
@@ -187,32 +373,9 @@ export function buildWaClientDependencies(input: {
         query: host.query,
         defaultTimeoutMs: options.signalFetchKeyBundlesTimeoutMs
     })
-    const authClient = new WaAuthClient(
-        {
-            deviceBrowser: options.deviceBrowser,
-            deviceOsDisplayName: options.deviceOsDisplayName,
-            devicePlatform: options.devicePlatform
-        },
-        {
-            logger,
-            authStore: sessionStore.auth,
-            signalStore: sessionStore.signal,
-            socket: {
-                sendNode: host.sendNode,
-                query: host.query
-            },
-            callbacks: {
-                onQr: (qr, ttlMs) => host.emitEvent('qr', qr, ttlMs),
-                onPairingCode: (code) => host.emitEvent('pairing_code', code),
-                onPairingRefresh: (forceManual) => host.emitEvent('pairing_refresh', forceManual),
-                onPaired: (credentials) => {
-                    host.emitEvent('paired', credentials)
-                    host.scheduleReconnectAfterPairing()
-                },
-                onError: (error) => host.handleError(error)
-            }
-        }
-    )
+    const authClient = createAuthClient({ options, logger, sessionStore, host })
+    const { getCurrentCredentials, getCurrentMeJid, getCurrentMeLid, getCurrentSignedIdentity } =
+        createCurrentAuthGetters(authClient)
     const messageDispatch = new WaMessageDispatchCoordinator({
         logger,
         messageClient,
@@ -223,9 +386,9 @@ export function buildWaClientDependencies(input: {
         signalProtocol,
         signalDeviceSync,
         signalSessionSync,
-        getCurrentMeJid: () => authClient.getCurrentCredentials()?.meJid,
-        getCurrentMeLid: () => authClient.getCurrentCredentials()?.meLid,
-        getCurrentSignedIdentity: () => authClient.getCurrentCredentials()?.signedIdentity
+        getCurrentMeJid,
+        getCurrentMeLid,
+        getCurrentSignedIdentity
     })
     const retryCoordinator = new WaRetryCoordinator({
         logger,
@@ -236,9 +399,9 @@ export function buildWaClientDependencies(input: {
         messageClient,
         sendNode: host.sendNode,
         tryResolvePendingNode: (node) => nodeOrchestrator.tryResolvePending(node),
-        getCurrentMeJid: () => authClient.getCurrentCredentials()?.meJid,
-        getCurrentMeLid: () => authClient.getCurrentCredentials()?.meLid,
-        getCurrentSignedIdentity: () => authClient.getCurrentCredentials()?.signedIdentity
+        getCurrentMeJid,
+        getCurrentMeLid,
+        getCurrentSignedIdentity
     })
     const appStateSync = new WaAppStateSyncClient({
         logger,
@@ -255,88 +418,47 @@ export function buildWaClientDependencies(input: {
         clearStoredCredentials: host.clearStoredState,
         connect: host.connect
     })
-    const incomingMessageAckOptions = {
+    const incomingMessageAckOptions = createIncomingMessageAckOptions({
         logger,
-        sendNode: host.sendNode,
-        getMeJid: () => authClient.getCurrentCredentials()?.meJid,
+        host,
+        getCurrentMeJid,
         signalProtocol,
         senderKeyManager,
-        onDecryptFailure: (context: WaRetryDecryptFailureContext, error: unknown) =>
-            retryCoordinator.onDecryptFailure(context, error),
-        emitIncomingMessage: (event: WaIncomingMessageEvent) => {
-            void host
-                .handleIncomingMessageEvent(event)
-                .catch((err) => host.handleError(toError(err)))
-        },
-        emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) =>
-            host.emitEvent('incoming_unhandled_stanza', event)
-    } as const
-    const handleClientDirtyBits = async (dirtyBits: Parameters<typeof handleDirtyBits>[1]) =>
-        handleDirtyBits(
-            {
-                logger,
-                queryWithContext: host.queryWithContext,
-                getCurrentCredentials: () => authClient.getCurrentCredentials(),
-                syncAppState: host.syncAppState
-            },
-            dirtyBits
-        )
+        retryCoordinator
+    })
+    const handleClientDirtyBits = createHandleClientDirtyBits({
+        logger,
+        host,
+        getCurrentCredentials
+    })
     const incomingNode = new WaIncomingNodeCoordinator({
         logger,
-        runtime: {
-            handleStreamControlResult: streamControl.handleStreamControlResult,
-            persistSuccessAttributes: (attributes) =>
-                authClient.persistSuccessAttributes(attributes),
-            emitSuccessNode: (node) => host.emitEvent('success', node),
-            updateClockSkewFromSuccess: host.updateClockSkewFromSuccess,
-            shouldWarmupMediaConn: () => {
-                const credentials = authClient.getCurrentCredentials()
-                const comms = host.getComms()
-                return !!(credentials?.meJid && comms && comms.getCommsState().connected)
-            },
-            warmupMediaConn: async () => {
-                await getClientMediaConn(mediaMessageBuildOptions, true)
-            },
-            persistRoutingInfo: (routingInfo) => authClient.persistRoutingInfo(routingInfo),
-            tryResolvePendingNode: (node) => nodeOrchestrator.tryResolvePending(node),
-            handleGenericIncomingNode: (node) => nodeOrchestrator.handleIncomingNode(node),
-            handleIncomingIqSetNode: (node) => authClient.handleIncomingIqSet(node),
-            handleLinkCodeNotificationNode: (node) => authClient.handleLinkCodeNotification(node),
-            handleCompanionRegRefreshNotificationNode: (node) =>
-                authClient.handleCompanionRegRefreshNotification(node),
-            handleIncomingMessageNode: (node) =>
-                handleIncomingMessageAck(node, incomingMessageAckOptions),
-            sendNode: host.sendNode,
-            handleIncomingRetryReceipt: (node) => retryCoordinator.handleIncomingRetryReceipt(node),
-            trackOutboundReceipt: (node) => retryCoordinator.trackOutboundReceipt(node),
-            emitIncomingReceipt: (event) => host.emitEvent('incoming_receipt', event),
-            emitIncomingPresence: (event) => host.emitEvent('incoming_presence', event),
-            emitIncomingChatstate: (event) => host.emitEvent('incoming_chatstate', event),
-            emitIncomingCall: (event) => host.emitEvent('incoming_call', event),
-            emitIncomingFailure: (event) => host.emitEvent('incoming_failure', event),
-            emitIncomingErrorStanza: (event) => host.emitEvent('incoming_error_stanza', event),
-            emitIncomingNotification: (event) => host.emitEvent('incoming_notification', event),
-            emitUnhandledIncomingNode: (event) =>
-                host.emitEvent('incoming_unhandled_stanza', event),
-            disconnect: host.disconnect,
-            clearStoredCredentials: host.clearStoredState,
-            parseDirtyBits: (nodes) => parseDirtyBits(nodes, logger),
-            handleDirtyBits: (dirtyBits) => handleClientDirtyBits(dirtyBits)
-        }
+        runtime: createIncomingNodeRuntime({
+            logger,
+            host,
+            authClient,
+            nodeOrchestrator,
+            streamControl,
+            mediaMessageBuildOptions,
+            retryCoordinator,
+            getCurrentMeJid,
+            handleClientDirtyBits,
+            incomingMessageAckOptions
+        })
     })
     const passiveTasks = new WaPassiveTasksCoordinator({
         logger,
         signalStore: sessionStore.signal,
-        runtime: {
-            queryWithContext: host.queryWithContext,
-            getCurrentCredentials: () => authClient.getCurrentCredentials(),
-            persistServerHasPreKeys: (serverHasPreKeys) =>
-                authClient.persistServerHasPreKeys(serverHasPreKeys),
-            sendNodeDirect: async (node) => nodeOrchestrator.sendNode(node),
-            takeDanglingReceipts: host.takeDanglingReceipts,
-            requeueDanglingReceipt: host.enqueueDanglingReceipt,
-            shouldQueueDanglingReceipt: host.shouldQueueDanglingReceipt
-        }
+        runtime: createPassiveTasksRuntime({
+            host,
+            authClient,
+            nodeOrchestrator,
+            getCurrentCredentials
+        })
+    })
+
+    const groupCoordinator = createGroupCoordinator({
+        queryWithContext: host.queryWithContext
     })
 
     return {
@@ -356,6 +478,7 @@ export function buildWaClientDependencies(input: {
         appStateSync,
         streamControl,
         incomingNode,
-        passiveTasks
+        passiveTasks,
+        groupCoordinator
     }
 }

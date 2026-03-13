@@ -6,12 +6,6 @@ export const WA_MESSAGE_TAGS = Object.freeze({
     ERROR: 'error'
 } as const)
 
-export const WA_MESSAGE_ACK_ATTRS = Object.freeze({
-    TYPE: 'type',
-    CLASS: 'class',
-    CODE: 'code'
-} as const)
-
 export const WA_MESSAGE_TYPES = Object.freeze({
     ENC_VERSION: '2',
     MEDIA_NOTIFY: 'medianotify',

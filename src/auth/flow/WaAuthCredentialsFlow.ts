@@ -1,15 +1,10 @@
-import type { WaAuthCredentials, WaAuthSocketOptions } from '@auth/types'
+import type { WaAuthClientOptions, WaAuthCredentials, WaAuthSocketOptions } from '@auth/types'
 import { randomBytesAsync } from '@crypto'
 import { toSerializedPubKey } from '@crypto/core/keys'
 import { X25519 } from '@crypto/curves/X25519'
 import type { Logger } from '@infra/log/types'
 import { getLoginIdentity } from '@protocol/jid'
-import { WaAdvSignature } from '@signal/crypto/WaAdvSignature'
-import {
-    generatePreKeyPair,
-    generateRegistrationInfo,
-    generateSignedPreKey
-} from '@signal/registration/keygen'
+import { verifySignalSignature } from '@signal/crypto/WaAdvSignature'
 import { createAndStoreInitialKeys } from '@signal/registration/utils'
 import type { WaAuthStore } from '@store/contracts/auth.store'
 import type { WaSignalStore } from '@store/contracts/signal.store'
@@ -63,7 +58,11 @@ export async function persistCredentials(
 export function buildCommsConfig(
     logger: Logger,
     credentials: WaAuthCredentials,
-    socketOptions: WaAuthSocketOptions
+    socketOptions: WaAuthSocketOptions,
+    clientOptions: Pick<
+        WaAuthClientOptions,
+        'deviceBrowser' | 'deviceOsDisplayName' | 'requireFullSync'
+    >
 ): WaCommsConfig {
     const registered = credentials.meJid !== null && credentials.meJid !== undefined
     const loginIdentity = registered ? getLoginIdentity(credentials.meJid) : null
@@ -89,13 +88,18 @@ export function buildCommsConfig(
             loginPayloadConfig: loginIdentity
                 ? {
                       username: loginIdentity.username,
-                      device: loginIdentity.device
+                      device: loginIdentity.device,
+                      deviceBrowser: clientOptions.deviceBrowser,
+                      deviceOsDisplayName: clientOptions.deviceOsDisplayName
                   }
                 : undefined,
             registrationPayloadConfig: !loginIdentity
                 ? {
                       registrationInfo: credentials.registrationInfo,
-                      signedPreKey: credentials.signedPreKey
+                      signedPreKey: credentials.signedPreKey,
+                      deviceBrowser: clientOptions.deviceBrowser,
+                      deviceOsDisplayName: clientOptions.deviceOsDisplayName,
+                      requireFullSync: clientOptions.requireFullSync
                   }
                 : undefined
         }
@@ -108,11 +112,7 @@ async function createFreshCredentials(
 ): Promise<WaAuthCredentials> {
     logger.trace('creating fresh credentials')
     const noiseKeyPair = await X25519.generateKeyPair()
-    const registrationBundle = await createAndStoreInitialKeys(signalStore, {
-        generateRegistrationInfo,
-        generatePreKeyPair,
-        generateSignedPreKey
-    })
+    const registrationBundle = await createAndStoreInitialKeys(signalStore)
     return {
         noiseKeyPair,
         registrationInfo: registrationBundle.registrationInfo,
@@ -136,7 +136,7 @@ async function hasValidSignedPreKey(
 ): Promise<boolean> {
     try {
         const serializedPubKey = toSerializedPubKey(credentials.signedPreKey.keyPair.pubKey)
-        const valid = await WaAdvSignature.verifySignalSignature(
+        const valid = await verifySignalSignature(
             credentials.registrationInfo.identityKeyPair.pubKey,
             serializedPubKey,
             credentials.signedPreKey.signature

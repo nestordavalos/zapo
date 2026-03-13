@@ -1,10 +1,3 @@
-/**
- * Error handling utilities
- */
-
-/**
- * Converts an unknown value to an Error instance
- */
 export function toError(value: unknown): Error {
     if (value instanceof Error) {
         return value
@@ -15,6 +8,19 @@ export function toError(value: unknown): Error {
     return new Error('unknown error')
 }
 
+function assertSafeInteger(
+    value: number,
+    field: string,
+    nullishBehavior: 'throw' | 'zero'
+): number {
+    if (!Number.isFinite(value) || !Number.isSafeInteger(value)) {
+        const prefix =
+            nullishBehavior === 'throw' ? `invalid ${field}` : 'invalid long numeric value'
+        throw new Error(`${prefix}: ${value}`)
+    }
+    return value
+}
+
 export function toSafeNumber(
     value: number | { toNumber?: () => number } | null | undefined,
     field: string
@@ -23,23 +29,15 @@ export function toSafeNumber(
         throw new Error(`missing ${field}`)
     }
     const numeric = typeof value === 'number' ? value : value.toNumber?.()
-    if (
-        typeof numeric !== 'number' ||
-        !Number.isFinite(numeric) ||
-        !Number.isSafeInteger(numeric)
-    ) {
+    if (typeof numeric !== 'number') {
         throw new Error(`invalid ${field}`)
     }
-    return numeric
+    return assertSafeInteger(numeric, field, 'throw')
 }
 
 export function longToNumber(value: number | { toNumber(): number } | null | undefined): number {
     if (value === null || value === undefined) {
         return 0
     }
-    const numeric = typeof value === 'number' ? value : value.toNumber()
-    if (!Number.isFinite(numeric) || !Number.isSafeInteger(numeric)) {
-        throw new Error(`invalid long numeric value: ${numeric}`)
-    }
-    return numeric
+    return assertSafeInteger(typeof value === 'number' ? value : value.toNumber(), '', 'zero')
 }

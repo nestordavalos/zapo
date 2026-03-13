@@ -14,11 +14,6 @@ interface SignalDeviceSyncApiOptions {
     readonly hostDomain?: string
 }
 
-export interface SignalSyncedDeviceList {
-    readonly jid: string
-    readonly deviceJids: readonly string[]
-}
-
 export class SignalDeviceSyncApi {
     private readonly logger: SignalDeviceSyncApiOptions['logger']
     private readonly query: SignalDeviceSyncApiOptions['query']
@@ -36,7 +31,7 @@ export class SignalDeviceSyncApi {
     public async syncDeviceList(
         userJids: readonly string[],
         timeoutMs = this.defaultTimeoutMs
-    ): Promise<readonly SignalSyncedDeviceList[]> {
+    ): Promise<readonly { readonly jid: string; readonly deviceJids: readonly string[] }[]> {
         const normalizedUsers = this.normalizeUsers(userJids)
         if (normalizedUsers.length === 0) {
             return []
@@ -96,7 +91,7 @@ export class SignalDeviceSyncApi {
     private parseDeviceSyncResponse(
         node: BinaryNode,
         requestedUsers: readonly string[]
-    ): readonly SignalSyncedDeviceList[] {
+    ): readonly { readonly jid: string; readonly deviceJids: readonly string[] }[] {
         assertIqResult(node, 'signal device sync')
         const usyncNode = findNodeChild(node, WA_NODE_TAGS.USYNC)
         if (!usyncNode) {
@@ -108,24 +103,23 @@ export class SignalDeviceSyncApi {
         }
 
         const requestedSet = new Set(requestedUsers)
-        const out: SignalSyncedDeviceList[] = []
         const userNodes = getNodeChildrenByTag(listNode, WA_NODE_TAGS.USER)
-        for (let index = 0; index < userNodes.length; index += 1) {
-            const userNode = userNodes[index]
-            const normalizedUserJid = userNode.attrs.jid
-                ? this.normalizeUserJid(userNode.attrs.jid)
-                : undefined
-            if (!normalizedUserJid || !requestedSet.has(normalizedUserJid)) {
-                continue
+        return userNodes.flatMap((userNode) => {
+            const userJid = userNode.attrs.jid
+            if (!userJid) {
+                return []
             }
-            const deviceJids = this.parseUserDeviceJids(userNode, normalizedUserJid)
-            out.push({
-                jid: normalizedUserJid,
-                deviceJids
-            })
-        }
-
-        return out
+            const normalizedUserJid = this.normalizeUserJid(userJid)
+            if (!requestedSet.has(normalizedUserJid)) {
+                return []
+            }
+            return [
+                {
+                    jid: normalizedUserJid,
+                    deviceJids: this.parseUserDeviceJids(userNode, normalizedUserJid)
+                }
+            ]
+        })
     }
 
     private parseUserDeviceJids(userNode: BinaryNode, userJid: string): readonly string[] {
@@ -148,32 +142,30 @@ export class SignalDeviceSyncApi {
             return []
         }
 
-        const dedup = new Set<string>()
-        const deviceNodes = getNodeChildrenByTag(deviceListNode, 'device')
-        for (let index = 0; index < deviceNodes.length; index += 1) {
-            const deviceNode = deviceNodes[index]
-            const rawId = deviceNode.attrs.id
-            const parsedId = rawId ? Number.parseInt(rawId, 10) : Number.NaN
-            if (!Number.isSafeInteger(parsedId) || parsedId < 0) {
-                continue
-            }
-            dedup.add(this.toDeviceJid(userJid, parsedId))
-        }
-        return [...dedup]
+        return [
+            ...new Set(
+                getNodeChildrenByTag(deviceListNode, 'device')
+                    .map((deviceNode) => {
+                        const parsedId = deviceNode.attrs.id
+                            ? Number.parseInt(deviceNode.attrs.id, 10)
+                            : Number.NaN
+                        return Number.isSafeInteger(parsedId) && parsedId >= 0
+                            ? this.toDeviceJid(userJid, parsedId)
+                            : null
+                    })
+                    .filter((jid): jid is string => jid !== null)
+            )
+        ]
     }
 
     private normalizeUsers(userJids: readonly string[]): readonly string[] {
-        const dedup = new Set<string>()
-        for (let index = 0; index < userJids.length; index += 1) {
-            dedup.add(this.normalizeUserJid(userJids[index]))
-        }
-        return [...dedup]
+        return [...new Set(userJids.map((jid) => this.normalizeUserJid(jid)))]
     }
 
     private normalizeUserJid(jid: string): string {
-        const parsed = splitJid(jid)
-        const address = parseSignalAddressFromJid(jid)
-        return `${address.user}@${parsed.server}`
+        const { user } = parseSignalAddressFromJid(jid)
+        const { server } = splitJid(jid)
+        return `${user}@${server}`
     }
 
     private toDeviceJid(userJid: string, deviceId: number): string {

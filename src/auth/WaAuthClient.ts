@@ -56,11 +56,17 @@ export class WaAuthClient {
 
     public constructor(options: WaAuthClientOptions, deps: WaAuthClientDependencies) {
         const deviceBrowser = options.deviceBrowser ?? WA_DEFAULTS.DEVICE_BROWSER
+        const device = Object.freeze({
+            browser: deviceBrowser,
+            osDisplayName: options.deviceOsDisplayName ?? getRuntimeOsDisplayName(),
+            platform: options.devicePlatform ?? getWaCompanionPlatformId(deviceBrowser)
+        })
         this.options = Object.freeze({
             ...options,
-            deviceBrowser,
-            deviceOsDisplayName: options.deviceOsDisplayName ?? getRuntimeOsDisplayName(),
-            devicePlatform: options.devicePlatform ?? getWaCompanionPlatformId(deviceBrowser)
+            deviceBrowser: device.browser,
+            deviceOsDisplayName: device.osDisplayName,
+            devicePlatform: device.platform,
+            requireFullSync: options.requireFullSync
         })
         this.logger = deps.logger
         this.callbacks = deps.callbacks ?? {}
@@ -71,24 +77,23 @@ export class WaAuthClient {
         this.qrFlow = new WaQrFlow({
             logger: this.logger,
             getCredentials: () => this.credentials,
-            getDevicePlatform: () => this.getDevicePlatform(),
+            getDevicePlatform: () => device.platform,
             emitQr: (qr, ttlMs) => this.callbacks.onQr?.(qr, ttlMs)
         })
         this.pairingFlow = new WaPairingFlow({
             logger: this.logger,
-            getCredentials: () => this.credentials,
-            updateCredentials: async (credentials) => this.updateCredentials(credentials),
-            sendNode: deps.socket.sendNode,
-            query: async (node, timeoutMs) => deps.socket.query(node, timeoutMs),
-            setQrRefs: (refs) => this.qrFlow.setRefs(refs),
-            clearQr: () => this.qrFlow.clear(),
-            refreshQr: () => this.qrFlow.refreshCurrentQr(),
-            getDeviceBrowser: () => this.getDeviceBrowser(),
-            getDeviceOsDisplayName: () => this.getDeviceOsDisplayName(),
-            getDevicePlatform: () => this.getDevicePlatform(),
-            emitPairingCode: (code) => this.callbacks.onPairingCode?.(code),
-            emitPairingRefresh: (forceManual) => this.callbacks.onPairingRefresh?.(forceManual),
-            emitPaired: (credentials) => this.callbacks.onPaired?.(credentials)
+            auth: {
+                getCredentials: () => this.credentials,
+                updateCredentials: this.updateCredentials.bind(this)
+            },
+            socket: deps.socket,
+            qrFlow: this.qrFlow,
+            device,
+            callbacks: {
+                emitPairingCode: (code) => this.callbacks.onPairingCode?.(code),
+                emitPairingRefresh: (forceManual) => this.callbacks.onPairingRefresh?.(forceManual),
+                emitPaired: (credentials) => this.callbacks.onPaired?.(credentials)
+            }
         })
     }
 
@@ -122,7 +127,11 @@ export class WaAuthClient {
 
     public buildCommsConfig(socketOptions: WaAuthSocketOptions) {
         this.logger.trace('auth client building comms config')
-        return buildCommsConfig(this.logger, this.requireCredentials(), socketOptions)
+        return buildCommsConfig(this.logger, this.requireCredentials(), socketOptions, {
+            deviceBrowser: this.options.deviceBrowser,
+            deviceOsDisplayName: this.options.deviceOsDisplayName,
+            requireFullSync: this.options.requireFullSync
+        })
     }
 
     public async clearTransientState(): Promise<void> {
@@ -264,19 +273,17 @@ export class WaAuthClient {
         phoneNumber: string,
         shouldShowPushNotification = false
     ): Promise<string> {
-        return this.runHandled(async () => {
-            this.requireCredentials()
-            this.logger.info('auth client requesting pairing code')
-            return this.pairingFlow.requestPairingCode(phoneNumber, shouldShowPushNotification)
-        })
+        this.requireCredentials()
+        this.logger.info('auth client requesting pairing code')
+        return this.runHandled(() =>
+            this.pairingFlow.requestPairingCode(phoneNumber, shouldShowPushNotification)
+        )
     }
 
     public async fetchPairingCountryCodeIso(): Promise<string> {
-        return this.runHandled(async () => {
-            this.requireCredentials()
-            this.logger.trace('auth client fetching pairing country code ISO')
-            return this.pairingFlow.fetchPairingCountryCodeIso()
-        })
+        this.requireCredentials()
+        this.logger.trace('auth client fetching pairing country code ISO')
+        return this.runHandled(() => this.pairingFlow.fetchPairingCountryCodeIso())
     }
 
     public async handleIncomingIqSet(node: BinaryNode): Promise<boolean> {
@@ -300,18 +307,6 @@ export class WaAuthClient {
             })
             return this.pairingFlow.handleCompanionRegRefreshNotification(node)
         })
-    }
-
-    private getDevicePlatform(): string {
-        return this.options.devicePlatform ?? WA_DEFAULTS.DEVICE_PLATFORM
-    }
-
-    private getDeviceBrowser(): string {
-        return this.options.deviceBrowser ?? WA_DEFAULTS.DEVICE_BROWSER
-    }
-
-    private getDeviceOsDisplayName(): string {
-        return this.options.deviceOsDisplayName ?? getRuntimeOsDisplayName()
     }
 
     private async patchCredentials(

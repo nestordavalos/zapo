@@ -2,34 +2,14 @@ import type { WaRetryOutboundState, WaRetryReplayPayload } from '@retry/types'
 import { base64ToBytes, bytesToBase64 } from '@util/base64'
 import { TEXT_DECODER, TEXT_ENCODER } from '@util/bytes'
 
-type SerializedReplayPayload =
-    | {
-          readonly mode: 'plaintext'
-          readonly to: string
-          readonly type: string
-          readonly plaintext: string
-      }
-    | {
-          readonly mode: 'encrypted'
-          readonly to: string
-          readonly type: string
-          readonly encType: 'msg' | 'pkmsg' | 'skmsg'
-          readonly ciphertext: string
-          readonly participant?: string
-      }
-    | {
-          readonly mode: 'opaque_node'
-          readonly node: string
-      }
-
-function assertObject(value: unknown): Record<string, unknown> {
+function requireObject(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object') {
         throw new Error('invalid retry replay payload')
     }
     return value as Record<string, unknown>
 }
 
-function assertString(value: unknown, field: string): string {
+function requireString(value: unknown, field: string): string {
     if (typeof value !== 'string') {
         throw new Error(`invalid retry replay payload field: ${field}`)
     }
@@ -37,7 +17,7 @@ function assertString(value: unknown, field: string): string {
 }
 
 export function encodeRetryReplayPayload(payload: WaRetryReplayPayload): Uint8Array {
-    const serialized: SerializedReplayPayload =
+    const serialized =
         payload.mode === 'plaintext'
             ? {
                   mode: payload.mode,
@@ -63,40 +43,43 @@ export function encodeRetryReplayPayload(payload: WaRetryReplayPayload): Uint8Ar
 
 export function decodeRetryReplayPayload(raw: Uint8Array): WaRetryReplayPayload {
     const json = JSON.parse(TEXT_DECODER.decode(raw))
-    const parsed = assertObject(json)
-    const mode = assertString(parsed.mode, 'mode')
+    const parsed = requireObject(json)
+    const mode = requireString(parsed.mode, 'mode')
     if (mode === 'plaintext') {
         return {
             mode,
-            to: assertString(parsed.to, 'to'),
-            type: assertString(parsed.type, 'type'),
-            plaintext: base64ToBytes(assertString(parsed.plaintext, 'plaintext'), 'retry.plaintext')
+            to: requireString(parsed.to, 'to'),
+            type: requireString(parsed.type, 'type'),
+            plaintext: base64ToBytes(
+                requireString(parsed.plaintext, 'plaintext'),
+                'retry.plaintext'
+            )
         }
     }
     if (mode === 'encrypted') {
-        const encType = assertString(parsed.encType, 'encType')
+        const encType = requireString(parsed.encType, 'encType')
         if (encType !== 'msg' && encType !== 'pkmsg' && encType !== 'skmsg') {
             throw new Error(`invalid retry encrypted encType: ${encType}`)
         }
         return {
             mode,
-            to: assertString(parsed.to, 'to'),
-            type: assertString(parsed.type, 'type'),
+            to: requireString(parsed.to, 'to'),
+            type: requireString(parsed.type, 'type'),
             encType,
             ciphertext: base64ToBytes(
-                assertString(parsed.ciphertext, 'ciphertext'),
+                requireString(parsed.ciphertext, 'ciphertext'),
                 'retry.ciphertext'
             ),
             participant:
                 parsed.participant === undefined
                     ? undefined
-                    : assertString(parsed.participant, 'participant')
+                    : requireString(parsed.participant, 'participant')
         }
     }
     if (mode === 'opaque_node') {
         return {
             mode,
-            node: base64ToBytes(assertString(parsed.node, 'node'), 'retry.node')
+            node: base64ToBytes(requireString(parsed.node, 'node'), 'retry.node')
         }
     }
     throw new Error(`invalid retry replay payload mode: ${mode}`)
@@ -114,8 +97,5 @@ export function pickRetryStateMax(
     left: WaRetryOutboundState,
     right: WaRetryOutboundState
 ): WaRetryOutboundState {
-    if (RETRY_STATE_RANK[left] >= RETRY_STATE_RANK[right]) {
-        return left
-    }
-    return right
+    return RETRY_STATE_RANK[left] >= RETRY_STATE_RANK[right] ? left : right
 }

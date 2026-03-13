@@ -2,12 +2,7 @@ import { toSerializedPubKey } from '@crypto'
 import { ConsoleLogger } from '@infra/log/ConsoleLogger'
 import type { Logger } from '@infra/log/types'
 import { MAX_PREV_SESSIONS } from '@signal/constants'
-import {
-    decryptMsg,
-    decryptMsgFromSession,
-    encryptMsg,
-    calculateRatchet
-} from '@signal/session/SignalRatchet'
+import { decryptMsg, decryptMsgFromSession, encryptMsg } from '@signal/session/SignalRatchet'
 import type { DecryptOutcome } from '@signal/session/SignalRatchet'
 import {
     deserializeMsg,
@@ -17,13 +12,11 @@ import {
 } from '@signal/session/SignalSerializer'
 import {
     detachSession,
-    ecdh,
     findMatchingSession,
     generateSerializedKeyPair,
     initiateSessionIncoming,
     initiateSessionOutgoing,
     requireLocalIdentity,
-    setPrevSessions,
     toSerializedKeyPair
 } from '@signal/session/SignalSession'
 import type {
@@ -35,17 +28,6 @@ import type {
 } from '@signal/types'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 import { uint8Equal } from '@util/bytes'
-
-interface SignalCiphertext {
-    readonly type: 'msg' | 'pkmsg'
-    readonly ciphertext: Uint8Array
-    readonly baseKey: Uint8Array | null
-}
-
-interface SignalMessageEnvelope {
-    readonly type: 'msg' | 'pkmsg' | 'skmsg'
-    readonly ciphertext: Uint8Array
-}
 
 export class SignalProtocol {
     private readonly store: WaSignalStore
@@ -64,16 +46,9 @@ export class SignalProtocol {
         address: SignalAddress,
         remoteBundle: SignalPreKeyBundle
     ): Promise<SignalSessionRecord> {
-        const local = await requireLocalIdentity(this.store, toSerializedKeyPair)
+        const local = await requireLocalIdentity(this.store)
         const localOneTimeBase = await generateSerializedKeyPair()
-        const session = await initiateSessionOutgoing(
-            local,
-            remoteBundle,
-            localOneTimeBase,
-            ecdh,
-            () => generateSerializedKeyPair(),
-            calculateRatchet
-        )
+        const session = await initiateSessionOutgoing(local, remoteBundle, localOneTimeBase)
         await this.store.setRemoteIdentity(address, session.remote.pubKey)
         await this.store.setSession(address, session)
         return session
@@ -83,7 +58,11 @@ export class SignalProtocol {
         address: SignalAddress,
         plaintext: Uint8Array,
         expectedIdentity?: Uint8Array
-    ): Promise<SignalCiphertext> {
+    ): Promise<{
+        readonly type: 'msg' | 'pkmsg'
+        readonly ciphertext: Uint8Array
+        readonly baseKey: Uint8Array | null
+    }> {
         const session = await this.store.getSession(address)
         if (!session) {
             throw new Error('signal session not found')
@@ -108,7 +87,10 @@ export class SignalProtocol {
 
     public async decryptMessage(
         address: SignalAddress,
-        envelope: SignalMessageEnvelope
+        envelope: {
+            readonly type: 'msg' | 'pkmsg'
+            readonly ciphertext: Uint8Array
+        }
     ): Promise<Uint8Array> {
         const currentSession = await this.store.getSession(address)
 
@@ -116,11 +98,9 @@ export class SignalProtocol {
         if (envelope.type === 'pkmsg') {
             const parsedPk = deserializePkMsg(envelope.ciphertext)
             outcome = await this.decryptPkMsg(currentSession, parsedPk)
-        } else if (envelope.type === 'msg') {
+        } else {
             const parsed = deserializeMsg(envelope.ciphertext)
             outcome = await this.decryptMsgInternal(currentSession, parsed)
-        } else {
-            throw new Error(`unsupported ciphertext type ${envelope.type}`)
         }
 
         const nextRemoteIdentity =
@@ -136,17 +116,12 @@ export class SignalProtocol {
         session: SignalSessionRecord | null,
         parsed: ParsedSignalMessage
     ): Promise<DecryptOutcome> {
-        return decryptMsg(
-            session,
-            parsed,
-            (sess, msg) => decryptMsgFromSession(sess, msg, () => generateSerializedKeyPair()),
-            (error, previousSessionIndex) => {
-                this.logger.debug('signal decrypt fallback session failed', {
-                    previousSessionIndex,
-                    message: error.message
-                })
-            }
-        )
+        return decryptMsg(session, parsed, (error, previousSessionIndex) => {
+            this.logger.debug('signal decrypt fallback session failed', {
+                previousSessionIndex,
+                message: error.message
+            })
+        })
     }
 
     private async decryptPkMsg(
@@ -155,11 +130,7 @@ export class SignalProtocol {
     ): Promise<DecryptOutcome> {
         const matchingSession = findMatchingSession(currentSession, parsed.sessionBaseKey)
         if (matchingSession) {
-            const [updatedSession, plaintext] = await decryptMsgFromSession(
-                matchingSession,
-                parsed,
-                () => generateSerializedKeyPair()
-            )
+            const [updatedSession, plaintext] = await decryptMsgFromSession(matchingSession, parsed)
             return {
                 updatedSession,
                 plaintext,
@@ -167,7 +138,7 @@ export class SignalProtocol {
             }
         }
 
-        const local = await requireLocalIdentity(this.store, toSerializedKeyPair)
+        const local = await requireLocalIdentity(this.store)
         const signedPreKey = await requireSignedPreKey(this.store, parsed.localSignedPreKeyId)
         const oneTimePreKey =
             parsed.localOneTimeKeyId === null || parsed.localOneTimeKeyId === undefined
@@ -181,8 +152,7 @@ export class SignalProtocol {
                 signed: toSerializedKeyPair(signedPreKey.keyPair),
                 oneTime: oneTimePreKey ? toSerializedKeyPair(oneTimePreKey.keyPair) : undefined,
                 ratchet: toSerializedKeyPair(signedPreKey.keyPair)
-            },
-            ecdh
+            }
         )
 
         const newIdentity =
@@ -190,15 +160,16 @@ export class SignalProtocol {
                 ? incoming.remote.pubKey
                 : null
         const baseSession = currentSession
-            ? setPrevSessions(incoming, [
-                  detachSession(currentSession),
-                  ...currentSession.prevSessions.slice(0, MAX_PREV_SESSIONS - 1)
-              ])
+            ? {
+                  ...incoming,
+                  prevSessions: [
+                      detachSession(currentSession),
+                      ...currentSession.prevSessions.slice(0, MAX_PREV_SESSIONS - 1)
+                  ]
+              }
             : incoming
 
-        const [updatedSession, plaintext] = await decryptMsgFromSession(baseSession, parsed, () =>
-            generateSerializedKeyPair()
-        )
+        const [updatedSession, plaintext] = await decryptMsgFromSession(baseSession, parsed)
         if (parsed.localOneTimeKeyId !== null && parsed.localOneTimeKeyId !== undefined) {
             await this.store.consumePreKeyById(parsed.localOneTimeKeyId)
         }

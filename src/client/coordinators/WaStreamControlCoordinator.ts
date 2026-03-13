@@ -1,5 +1,5 @@
 import type { Logger } from '@infra/log/types'
-import { handleParsedStreamControl } from '@transport/stream/handlers'
+import { WA_DISCONNECT_REASONS, WA_STREAM_SIGNALING } from '@protocol/constants'
 import type { WaStreamControlNodeResult } from '@transport/stream/parse'
 import type { WaComms } from '@transport/WaComms'
 import { toError } from '@util/primitives'
@@ -113,13 +113,56 @@ export function createStreamControlHandler(
     }
 
     return {
-        handleStreamControlResult: async (result: WaStreamControlNodeResult) =>
-            handleParsedStreamControl(result, {
-                logger,
-                forceLoginDueToStreamError,
-                logoutDueToStreamError,
-                disconnectDueToStreamError,
-                resumeSocketDueToStreamError
-            })
+        handleStreamControlResult: async (result: WaStreamControlNodeResult) => {
+            switch (result.kind) {
+                case 'xmlstreamend':
+                    logger.info('received xmlstreamend stanza')
+                    return
+                case 'stream_error_code':
+                    logger.warn('received stream:error with code', { code: result.code })
+                    if (result.code >= 500 && result.code < 600) {
+                        if (result.code === WA_STREAM_SIGNALING.FORCE_LOGIN_CODE) {
+                            await forceLoginDueToStreamError(result.code)
+                            return
+                        }
+                        if (result.code === WA_STREAM_SIGNALING.FORCE_LOGOUT_CODE) {
+                            await logoutDueToStreamError(
+                                `stream_error_code_${WA_STREAM_SIGNALING.FORCE_LOGOUT_CODE}`,
+                                true
+                            )
+                            return
+                        }
+                    }
+                    await resumeSocketDueToStreamError(`stream_error_code_${result.code}`)
+                    return
+                case 'stream_error_replaced':
+                    logger.warn('received stream:error replaced, stopping client')
+                    await disconnectDueToStreamError(WA_DISCONNECT_REASONS.STREAM_ERROR_REPLACED)
+                    return
+                case 'stream_error_device_removed':
+                    logger.warn('received stream:error device removed, logging out')
+                    await logoutDueToStreamError(
+                        WA_DISCONNECT_REASONS.STREAM_ERROR_DEVICE_REMOVED,
+                        false
+                    )
+                    return
+                case 'stream_error_ack':
+                    logger.warn('received stream:error ack', { id: result.id })
+                    await resumeSocketDueToStreamError(WA_DISCONNECT_REASONS.STREAM_ERROR_ACK)
+                    return
+                case 'stream_error_xml_not_well_formed':
+                    logger.warn('received stream:error xml-not-well-formed')
+                    await resumeSocketDueToStreamError(
+                        WA_DISCONNECT_REASONS.STREAM_ERROR_XML_NOT_WELL_FORMED
+                    )
+                    return
+                case 'stream_error_other':
+                    logger.warn('received stream:error other')
+                    await resumeSocketDueToStreamError(WA_DISCONNECT_REASONS.STREAM_ERROR_OTHER)
+                    return
+                default:
+                    return
+            }
+        }
     }
 }

@@ -14,22 +14,27 @@ import {
 } from '@transport/node/helpers'
 import type { BinaryNode } from '@transport/types'
 
+function decodeExactLength(
+    value: BinaryNode['content'],
+    field: string,
+    expectedLength: number
+): Uint8Array {
+    const bytes = decodeNodeContentBase64OrBytes(value, field)
+    if (bytes.byteLength !== expectedLength) {
+        throw new Error(`${field} must be ${expectedLength} bytes`)
+    }
+    return bytes
+}
+
+function parseUint24(bytes: Uint8Array): number {
+    return (bytes[0] << 16) | (bytes[1] << 8) | bytes[2]
+}
+
 interface SignalSessionSyncApiOptions {
     readonly logger: Logger
     readonly query: (node: BinaryNode, timeoutMs?: number) => Promise<BinaryNode>
     readonly defaultTimeoutMs?: number
     readonly hostDomain?: string
-}
-
-interface SignalFetchKeyBundleTarget {
-    readonly jid: string
-    readonly reasonIdentity?: boolean
-}
-
-interface SignalFetchedKeyBundle {
-    readonly jid: string
-    readonly bundle: SignalPreKeyBundle
-    readonly deviceIdentity?: Uint8Array
 }
 
 export class SignalSessionSyncApi {
@@ -47,16 +52,47 @@ export class SignalSessionSyncApi {
     }
 
     public async fetchKeyBundle(
-        target: SignalFetchKeyBundleTarget,
+        target: {
+            readonly jid: string
+            readonly reasonIdentity?: boolean
+        },
         timeoutMs = this.defaultTimeoutMs
-    ): Promise<SignalFetchedKeyBundle> {
-        const requestNode = this.makeFetchKeyBundleRequest(target)
+    ): Promise<{
+        readonly jid: string
+        readonly bundle: SignalPreKeyBundle
+        readonly deviceIdentity?: Uint8Array
+    }> {
         this.logger.debug('signal fetch key bundle request', {
             jid: target.jid,
             reasonIdentity: target.reasonIdentity === true,
             timeoutMs
         })
-        const responseNode = await this.query(requestNode, timeoutMs)
+        const responseNode = await this.query(
+            {
+                tag: WA_NODE_TAGS.IQ,
+                attrs: {
+                    type: WA_IQ_TYPES.GET,
+                    xmlns: WA_XMLNS.SIGNAL,
+                    to: this.hostDomain
+                },
+                content: [
+                    {
+                        tag: WA_NODE_TAGS.KEY,
+                        attrs: {},
+                        content: [
+                            {
+                                tag: WA_NODE_TAGS.USER,
+                                attrs: {
+                                    jid: target.jid,
+                                    ...(target.reasonIdentity ? { reason: 'identity' } : {})
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            timeoutMs
+        )
         const parsed = this.parseFetchKeyBundleResponse(responseNode, target.jid)
         this.logger.debug('signal fetch key bundle success', {
             requestJid: target.jid,
@@ -67,41 +103,25 @@ export class SignalSessionSyncApi {
         return parsed
     }
 
-    private makeFetchKeyBundleRequest(target: SignalFetchKeyBundleTarget): BinaryNode {
-        return {
-            tag: WA_NODE_TAGS.IQ,
-            attrs: {
-                type: WA_IQ_TYPES.GET,
-                xmlns: WA_XMLNS.SIGNAL,
-                to: this.hostDomain
-            },
-            content: [
-                {
-                    tag: WA_NODE_TAGS.KEY,
-                    attrs: {},
-                    content: [
-                        {
-                            tag: WA_NODE_TAGS.USER,
-                            attrs: {
-                                jid: target.jid,
-                                ...(target.reasonIdentity ? { reason: 'identity' } : {})
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-    }
-
     private parseFetchKeyBundleResponse(
         node: BinaryNode,
         expectedJid: string
-    ): SignalFetchedKeyBundle {
+    ): {
+        readonly jid: string
+        readonly bundle: SignalPreKeyBundle
+        readonly deviceIdentity?: Uint8Array
+    } {
         if (node.tag !== WA_NODE_TAGS.IQ) {
             throw new Error(`invalid key bundle response tag: ${node.tag}`)
         }
         if (node.attrs.type === WA_IQ_TYPES.ERROR) {
-            throw new Error(this.describeIqError(node))
+            const errorNode = findNodeChild(node, WA_NODE_TAGS.ERROR)
+            if (!errorNode) {
+                throw new Error(`key bundle iq error for ${node.attrs.id ?? 'unknown id'}`)
+            }
+            const code = errorNode.attrs.code ?? 'unknown'
+            const text = errorNode.attrs.text ?? errorNode.attrs.type ?? 'unknown'
+            throw new Error(`key bundle iq error (${code} ${text})`)
         }
         if (node.attrs.type !== WA_IQ_TYPES.RESULT) {
             throw new Error(`invalid key bundle response type: ${node.attrs.type ?? 'unknown'}`)
@@ -116,7 +136,7 @@ export class SignalSessionSyncApi {
             throw new Error('key bundle response list is empty')
         }
 
-        const userNode = this.pickUserNode(userNodes, expectedJid)
+        const userNode = userNodes.find((entry) => entry.attrs.jid === expectedJid) ?? userNodes[0]
         const userJid = userNode.attrs.jid ?? expectedJid
         const userErrorNode = findNodeChild(userNode, WA_NODE_TAGS.ERROR)
         if (userErrorNode) {
@@ -131,16 +151,6 @@ export class SignalSessionSyncApi {
             bundle: parsed.bundle,
             ...(parsed.deviceIdentity ? { deviceIdentity: parsed.deviceIdentity } : {})
         }
-    }
-
-    private pickUserNode(nodes: readonly BinaryNode[], expectedJid: string): BinaryNode {
-        for (let index = 0; index < nodes.length; index += 1) {
-            const node = nodes[index]
-            if (node.attrs.jid === expectedJid) {
-                return node
-            }
-        }
-        return nodes[0]
     }
 
     private parseUserKeyBundle(node: BinaryNode): {
@@ -160,14 +170,10 @@ export class SignalSessionSyncApi {
             throw new Error('key bundle user missing signed pre-key node')
         }
 
-        const registrationBytes = decodeNodeContentBase64OrBytes(
+        const registrationBytes = decodeExactLength(
             registrationNode.content,
-            'key bundle registration'
-        )
-        this.assertLength(
-            registrationBytes,
-            SIGNAL_REGISTRATION_ID_LENGTH,
-            'key bundle registration bytes'
+            'key bundle registration',
+            SIGNAL_REGISTRATION_ID_LENGTH
         )
         const registrationId = new DataView(
             registrationBytes.buffer,
@@ -175,8 +181,11 @@ export class SignalSessionSyncApi {
             registrationBytes.byteLength
         ).getUint32(0, false)
 
-        const identity = decodeNodeContentBase64OrBytes(identityNode.content, 'key bundle identity')
-        this.assertLength(identity, SIGNAL_KEY_DATA_LENGTH, 'key bundle identity')
+        const identity = decodeExactLength(
+            identityNode.content,
+            'key bundle identity',
+            SIGNAL_KEY_DATA_LENGTH
+        )
 
         const signedIdNode = findNodeChild(signedPreKeyNode, WA_NODE_TAGS.ID)
         const signedValueNode = findNodeChild(signedPreKeyNode, WA_NODE_TAGS.VALUE)
@@ -185,21 +194,21 @@ export class SignalSessionSyncApi {
             throw new Error('key bundle signed pre-key is incomplete')
         }
 
-        const signedIdBytes = decodeNodeContentBase64OrBytes(
+        const signedIdBytes = decodeExactLength(
             signedIdNode.content,
-            'key bundle skey.id'
+            'key bundle skey.id',
+            SIGNAL_KEY_ID_LENGTH
         )
-        this.assertLength(signedIdBytes, SIGNAL_KEY_ID_LENGTH, 'key bundle skey.id')
-        const signedValue = decodeNodeContentBase64OrBytes(
+        const signedValue = decodeExactLength(
             signedValueNode.content,
-            'key bundle skey.value'
+            'key bundle skey.value',
+            SIGNAL_KEY_DATA_LENGTH
         )
-        this.assertLength(signedValue, SIGNAL_KEY_DATA_LENGTH, 'key bundle skey.value')
-        const signedSignature = decodeNodeContentBase64OrBytes(
+        const signedSignature = decodeExactLength(
             signedSignatureNode.content,
-            'key bundle skey.signature'
+            'key bundle skey.signature',
+            SIGNAL_SIGNATURE_LENGTH
         )
-        this.assertLength(signedSignature, SIGNAL_SIGNATURE_LENGTH, 'key bundle skey.signature')
 
         const preKeyNode = findNodeChild(node, WA_NODE_TAGS.KEY)
         let oneTimeKey: SignalPreKeyBundle['oneTimeKey']
@@ -209,19 +218,19 @@ export class SignalSessionSyncApi {
             if (!preKeyIdNode || !preKeyValueNode) {
                 throw new Error('key bundle one-time pre-key is incomplete')
             }
-            const preKeyIdBytes = decodeNodeContentBase64OrBytes(
+            const preKeyIdBytes = decodeExactLength(
                 preKeyIdNode.content,
-                'key bundle key.id'
+                'key bundle key.id',
+                SIGNAL_KEY_ID_LENGTH
             )
-            this.assertLength(preKeyIdBytes, SIGNAL_KEY_ID_LENGTH, 'key bundle key.id')
-            const preKeyValue = decodeNodeContentBase64OrBytes(
+            const preKeyValue = decodeExactLength(
                 preKeyValueNode.content,
-                'key bundle key.value'
+                'key bundle key.value',
+                SIGNAL_KEY_DATA_LENGTH
             )
-            this.assertLength(preKeyValue, SIGNAL_KEY_DATA_LENGTH, 'key bundle key.value')
 
             oneTimeKey = {
-                id: this.parseUint24(preKeyIdBytes),
+                id: parseUint24(preKeyIdBytes),
                 publicKey: preKeyValue
             }
         }
@@ -239,7 +248,7 @@ export class SignalSessionSyncApi {
                 regId: registrationId,
                 identity,
                 signedKey: {
-                    id: this.parseUint24(signedIdBytes),
+                    id: parseUint24(signedIdBytes),
                     publicKey: signedValue,
                     signature: signedSignature
                 },
@@ -247,25 +256,5 @@ export class SignalSessionSyncApi {
             },
             ...(deviceIdentity ? { deviceIdentity } : {})
         }
-    }
-
-    private parseUint24(bytes: Uint8Array): number {
-        return (bytes[0] << 16) | (bytes[1] << 8) | bytes[2]
-    }
-
-    private assertLength(bytes: Uint8Array, expectedLength: number, field: string): void {
-        if (bytes.byteLength !== expectedLength) {
-            throw new Error(`${field} must be ${expectedLength} bytes`)
-        }
-    }
-
-    private describeIqError(node: BinaryNode): string {
-        const errorNode = findNodeChild(node, WA_NODE_TAGS.ERROR)
-        if (!errorNode) {
-            return `key bundle iq error for ${node.attrs.id ?? 'unknown id'}`
-        }
-        const code = errorNode.attrs.code ?? 'unknown'
-        const text = errorNode.attrs.text ?? errorNode.attrs.type ?? 'unknown'
-        return `key bundle iq error (${code} ${text})`
     }
 }

@@ -3,7 +3,7 @@ import {
     aesGcmDecrypt,
     aesGcmEncrypt,
     buildNonce,
-    hkdfSplit64,
+    hkdfSplit,
     importAesGcmKey,
     sha256
 } from '@crypto'
@@ -37,7 +37,7 @@ export class WaNoiseHandshake {
 
     public async mixIntoKey(keyMaterial: Uint8Array): Promise<void> {
         this.nonce = 0
-        const [newChainingKey, nextCipherKey] = await hkdfSplit64(keyMaterial, this.chainingKey)
+        const [newChainingKey, nextCipherKey] = await hkdfSplit(keyMaterial, this.chainingKey, '')
         this.chainingKey = newChainingKey
         this.cipherKey = await importAesGcmKey(nextCipherKey, ['encrypt', 'decrypt'])
     }
@@ -63,7 +63,7 @@ export class WaNoiseHandshake {
     }
 
     public async finish(): Promise<WaNoiseSocket> {
-        const [writeKeyRaw, readKeyRaw] = await hkdfSplit64(EMPTY_BYTES, this.chainingKey)
+        const [writeKeyRaw, readKeyRaw] = await hkdfSplit(EMPTY_BYTES, this.chainingKey, '')
         const writeKey = await importAesGcmKey(writeKeyRaw, ['encrypt'])
         const readKey = await importAesGcmKey(readKeyRaw, ['decrypt'])
         this.handshakeHash = EMPTY_BYTES

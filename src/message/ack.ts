@@ -1,9 +1,4 @@
-import {
-    WA_MESSAGE_ACK_ATTRS,
-    WA_MESSAGE_TAGS,
-    WA_MESSAGE_TYPES,
-    WA_RETRYABLE_ACK_CODES
-} from '@protocol/constants'
+import { WA_MESSAGE_TAGS, WA_MESSAGE_TYPES, WA_RETRYABLE_ACK_CODES } from '@protocol/constants'
 import type { BinaryNode } from '@transport/types'
 
 export function isAckOrReceiptNode(node: BinaryNode): boolean {
@@ -17,19 +12,19 @@ export function isNegativeAckNode(node: BinaryNode): boolean {
     if (node.tag !== WA_MESSAGE_TAGS.ACK) {
         return false
     }
-    const ackType = node.attrs[WA_MESSAGE_ACK_ATTRS.TYPE]
-    const ackClass = node.attrs[WA_MESSAGE_ACK_ATTRS.CLASS]
+    const ackType = node.attrs.type
+    const ackClass = node.attrs.class
     return (
         ackType === WA_MESSAGE_TYPES.ACK_TYPE_ERROR || ackClass === WA_MESSAGE_TYPES.ACK_CLASS_ERROR
     )
 }
 
 export function isRetryableNegativeAck(node: BinaryNode): boolean {
-    const code = node.attrs[WA_MESSAGE_ACK_ATTRS.CODE]
+    const code = node.attrs.code
     if (code && WA_RETRYABLE_ACK_CODES.includes(code as (typeof WA_RETRYABLE_ACK_CODES)[number])) {
         return true
     }
-    const ackType = node.attrs[WA_MESSAGE_ACK_ATTRS.TYPE]
+    const ackType = node.attrs.type
     if (ackType && (ackType === 'wait' || ackType === 'retry' || ackType === 'timeout')) {
         return true
     }
@@ -39,9 +34,9 @@ export function isRetryableNegativeAck(node: BinaryNode): boolean {
 export function describeAckNode(node: BinaryNode): string {
     const parts = [`tag=${node.tag}`]
     const id = node.attrs.id
-    const type = node.attrs[WA_MESSAGE_ACK_ATTRS.TYPE]
-    const ackClass = node.attrs[WA_MESSAGE_ACK_ATTRS.CLASS]
-    const code = node.attrs[WA_MESSAGE_ACK_ATTRS.CODE]
+    const type = node.attrs.type
+    const ackClass = node.attrs.class
+    const code = node.attrs.code
     if (id) {
         parts.push(`id=${id}`)
     }

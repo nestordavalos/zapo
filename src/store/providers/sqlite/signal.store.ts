@@ -133,10 +133,7 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
         if (!Number.isSafeInteger(count) || count <= 0) {
             throw new Error(`invalid prekey count: ${count}`)
         }
-
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        return this.withTransaction(async (db) => {
             this.ensureMetaRow(db)
             const available = db
                 .all<SignalPreKeyRow>(
@@ -165,13 +162,8 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
                     [nextPreKeyId, this.options.sessionId]
                 )
             }
-
-            db.exec('COMMIT')
             return available
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     public async getPreKeyById(keyId: number): Promise<PreKeyRecord | null> {
@@ -186,9 +178,7 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
     }
 
     public async consumePreKeyById(keyId: number): Promise<PreKeyRecord | null> {
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        return this.withTransaction((db) => {
             const row = db.get<SignalPreKeyRow>(
                 `SELECT key_id, pub_key, priv_key, uploaded
                  FROM signal_prekey
@@ -196,7 +186,6 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
                 [this.options.sessionId, keyId]
             )
             if (!row) {
-                db.exec('COMMIT')
                 return null
             }
             db.run(
@@ -204,12 +193,8 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
                  WHERE session_id = ? AND key_id = ?`,
                 [this.options.sessionId, keyId]
             )
-            db.exec('COMMIT')
             return decodeSignalPreKeyRow(row)
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     public async getOrGenSinglePreKey(
@@ -367,12 +352,9 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
              WHERE session_id = ?`,
             [this.options.sessionId]
         )
-        if (!row) {
-            return { serverHasPreKeys: false, nextPreKeyId: 1 }
-        }
         return {
-            serverHasPreKeys: toBoolOrUndef(row.server_has_prekeys) === true,
-            nextPreKeyId: asNumber(row.next_prekey_id, 'signal_meta.next_prekey_id')
+            serverHasPreKeys: toBoolOrUndef(row!.server_has_prekeys) === true,
+            nextPreKeyId: asNumber(row!.next_prekey_id, 'signal_meta.next_prekey_id')
         }
     }
 }

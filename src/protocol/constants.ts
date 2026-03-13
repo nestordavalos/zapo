@@ -7,12 +7,7 @@ export {
     WA_STREAM_SIGNALING
 } from '@protocol/stream'
 export { WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/nodes'
-export {
-    WA_MESSAGE_ACK_ATTRS,
-    WA_MESSAGE_TAGS,
-    WA_MESSAGE_TYPES,
-    WA_RETRYABLE_ACK_CODES
-} from '@protocol/message'
+export { WA_MESSAGE_TAGS, WA_MESSAGE_TYPES, WA_RETRYABLE_ACK_CODES } from '@protocol/message'
 export {
     WA_APP_STATE_COLLECTIONS,
     WA_APP_STATE_COLLECTION_STATES,
@@ -29,3 +24,4 @@ export {
     WA_SUPPORTED_DIRTY_TYPES
 } from '@protocol/dirty'
 export { WA_DEFAULTS } from '@protocol/defaults'
+export { WA_GROUP_PARTICIPANT_TYPES, type WaGroupSetting } from '@protocol/group'

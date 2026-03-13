@@ -128,29 +128,18 @@ export class WaAppStateMemoryStore implements WaAppStateStore {
         return state
     }
 
-    public async setCollectionState(
-        collection: AppStateCollectionName,
-        version: number,
-        hash: Uint8Array,
-        indexValueMap: ReadonlyMap<string, Uint8Array>
-    ): Promise<void> {
-        this.collections.set(collection, {
-            version,
-            hash,
-            indexValueMap: toBoundedMap(indexValueMap.entries(), this.maxCollectionEntries)
-        })
-    }
-
     public async setCollectionStates(
         updates: readonly WaAppStateCollectionStateUpdate[]
     ): Promise<void> {
         for (const update of updates) {
-            await this.setCollectionState(
-                update.collection,
-                update.version,
-                update.hash,
-                update.indexValueMap
-            )
+            this.collections.set(update.collection, {
+                version: update.version,
+                hash: update.hash,
+                indexValueMap: toBoundedMap(
+                    update.indexValueMap.entries(),
+                    this.maxCollectionEntries
+                )
+            })
         }
     }
 

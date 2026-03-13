@@ -48,11 +48,6 @@ interface MacMutation {
     readonly valueMac: Uint8Array
 }
 
-interface DecryptedSnapshotRecord {
-    readonly decrypted: Awaited<ReturnType<WaAppStateCrypto['decryptMutation']>>
-    readonly recordKeyId: Uint8Array
-}
-
 type DecryptedPatchMutation = WaAppStateMutation & { operationCode: number }
 
 interface WaAppStateSyncClientOptions {
@@ -61,50 +56,6 @@ interface WaAppStateSyncClientOptions {
     readonly store: WaAppStateStore
     readonly hostDomain?: string
     readonly defaultTimeoutMs?: number
-}
-
-interface WaAppStateSyncContext {
-    readonly keys: Map<string, Uint8Array | null>
-    readonly collections: Map<AppStateCollectionName, WaAppStateCollectionStoreState>
-    readonly dirtyCollections: Set<AppStateCollectionName>
-}
-
-interface SyncRoundResult {
-    readonly results: readonly WaAppStateCollectionSyncResult[]
-    readonly collectionsToRefetch: readonly AppStateCollectionName[]
-    readonly stateChanged: boolean
-}
-
-interface PreparedCollectionRequest {
-    readonly collection: AppStateCollectionName
-    readonly node: BinaryNode
-    readonly outgoingContext?: OutgoingPatchContext
-    readonly skippedUpload: boolean
-}
-
-interface PreparedSyncRoundRequest {
-    readonly collectionNodes: readonly BinaryNode[]
-    readonly outgoingContexts: ReadonlyMap<AppStateCollectionName, OutgoingPatchContext>
-    readonly skippedUploadCollections: ReadonlySet<AppStateCollectionName>
-}
-
-interface CollectionSyncOutcome {
-    readonly collection: AppStateCollectionName
-    readonly shouldRefetch: boolean
-    readonly stateChanged: boolean
-    readonly result: WaAppStateCollectionSyncResult
-}
-
-interface ProtoLongLike {
-    toNumber(): number
-}
-
-function isProtoLongLike(value: unknown): value is ProtoLongLike {
-    return (
-        typeof value === 'object' &&
-        value !== null &&
-        typeof (value as { toNumber?: unknown }).toNumber === 'function'
-    )
 }
 
 export class WaAppStateMissingKeyError extends Error {
@@ -121,6 +72,11 @@ export class WaAppStateSyncClient {
     private readonly hostDomain: string
     private readonly defaultTimeoutMs: number
     private readonly crypto: WaAppStateCrypto
+    private syncContext: {
+        readonly keys: Map<string, Uint8Array | null>
+        readonly collections: Map<AppStateCollectionName, WaAppStateCollectionStoreState>
+        readonly dirtyCollections: Set<AppStateCollectionName>
+    } | null
     private syncPromise: Promise<WaAppStateSyncResult> | null
 
     public constructor(options: WaAppStateSyncClientOptions) {
@@ -131,6 +87,7 @@ export class WaAppStateSyncClient {
         this.defaultTimeoutMs = options.defaultTimeoutMs ?? WA_DEFAULTS.APP_STATE_SYNC_TIMEOUT_MS
 
         this.crypto = new WaAppStateCrypto()
+        this.syncContext = null
         this.syncPromise = null
     }
 
@@ -190,98 +147,100 @@ export class WaAppStateSyncClient {
     }
 
     private async syncOnce(options: WaAppStateSyncOptions = {}): Promise<WaAppStateSyncResult> {
-        const context: WaAppStateSyncContext = {
-            keys: new Map(),
-            collections: new Map(),
-            dirtyCollections: new Set()
+        const context = {
+            keys: new Map<string, Uint8Array | null>(),
+            collections: new Map<AppStateCollectionName, WaAppStateCollectionStoreState>(),
+            dirtyCollections: new Set<AppStateCollectionName>()
         }
+        this.syncContext = context
         const collections = [
             ...new Set<AppStateCollectionName>(options.collections ?? APP_STATE_DEFAULT_COLLECTIONS)
         ]
-        this.logger.info('app-state sync start', {
-            collections: collections.length,
-            pendingMutations: options.pendingMutations?.length ?? 0
-        })
-        const pendingByCollection = this.groupPendingMutations(options.pendingMutations ?? [])
-        const resultMap = new Map<AppStateCollectionName, WaAppStateCollectionSyncResult>()
-        let stateChanged = false
-        let collectionsToSync = [...collections]
-        const maxSyncIterations = 5
-        let syncIteration = 0
+        try {
+            this.logger.info('app-state sync start', {
+                collections: collections.length,
+                pendingMutations: options.pendingMutations?.length ?? 0
+            })
+            const pendingByCollection = this.groupPendingMutations(options.pendingMutations ?? [])
+            const resultMap = new Map<AppStateCollectionName, WaAppStateCollectionSyncResult>()
+            let stateChanged = false
+            let collectionsToSync = [...collections]
+            const maxSyncIterations = 5
+            let syncIteration = 0
 
-        while (collectionsToSync.length > 0) {
-            syncIteration += 1
-            if (syncIteration > maxSyncIterations) {
-                this.logger.warn('app-state sync reached max iterations', {
-                    maxSyncIterations,
-                    remainingCollections: collectionsToSync
-                })
-                for (const collection of collectionsToSync) {
-                    resultMap.set(collection, {
-                        collection,
-                        state: WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
+            while (collectionsToSync.length > 0) {
+                syncIteration += 1
+                if (syncIteration > maxSyncIterations) {
+                    this.logger.warn('app-state sync reached max iterations', {
+                        maxSyncIterations,
+                        remainingCollections: collectionsToSync
+                    })
+                    for (const collection of collectionsToSync) {
+                        resultMap.set(collection, {
+                            collection,
+                            state: WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
+                        })
+                    }
+                    break
+                }
+
+                const round = await this.syncCollectionsRound(
+                    collectionsToSync,
+                    pendingByCollection,
+                    options
+                )
+                stateChanged = stateChanged || round.stateChanged
+                for (const result of round.results) {
+                    resultMap.set(result.collection, result)
+                }
+
+                collectionsToSync = [...round.collectionsToRefetch]
+                if (collectionsToSync.length > 0) {
+                    this.logger.debug('app-state scheduling refetch for collections', {
+                        iteration: syncIteration,
+                        collections: collectionsToSync
                     })
                 }
-                break
             }
 
-            const round = await this.syncCollectionsRound(
-                context,
-                collectionsToSync,
-                pendingByCollection,
-                options
+            if (stateChanged && context.dirtyCollections.size > 0) {
+                await this.persistCollectionUpdates()
+                this.logger.info('app-state sync persisted updated state')
+            }
+
+            const orderedResults = collections.map(
+                (collection) =>
+                    resultMap.get(collection) ?? {
+                        collection,
+                        state: WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
+                    }
             )
-            stateChanged = stateChanged || round.stateChanged
-            for (const result of round.results) {
-                resultMap.set(result.collection, result)
-            }
 
-            collectionsToSync = [...round.collectionsToRefetch]
-            if (collectionsToSync.length > 0) {
-                this.logger.debug('app-state scheduling refetch for collections', {
-                    iteration: syncIteration,
-                    collections: collectionsToSync
-                })
+            this.logger.info('app-state sync finished', {
+                collections: orderedResults.length,
+                stateChanged
+            })
+            return { collections: orderedResults }
+        } finally {
+            if (this.syncContext === context) {
+                this.syncContext = null
             }
         }
-
-        if (stateChanged && context.dirtyCollections.size > 0) {
-            await this.persistCollectionUpdates(context)
-            this.logger.info('app-state sync persisted updated state')
-        }
-
-        const orderedResults = collections.map((collection) => {
-            const existing = resultMap.get(collection)
-            if (existing) {
-                return existing
-            }
-            return {
-                collection,
-                state: WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
-            }
-        })
-
-        this.logger.info('app-state sync finished', {
-            collections: orderedResults.length,
-            stateChanged
-        })
-        return { collections: orderedResults }
     }
 
     private async syncCollectionsRound(
-        context: WaAppStateSyncContext,
         collections: readonly AppStateCollectionName[],
         pendingByCollection: ReadonlyMap<
             AppStateCollectionName,
             readonly WaAppStateMutationInput[]
         >,
         options: WaAppStateSyncOptions
-    ): Promise<SyncRoundResult> {
-        const prepared = await this.prepareSyncRoundRequest(
-            context,
-            collections,
-            pendingByCollection
-        )
+    ): Promise<{
+        readonly results: readonly WaAppStateCollectionSyncResult[]
+        readonly collectionsToRefetch: readonly AppStateCollectionName[]
+        readonly stateChanged: boolean
+    }> {
+        const prepared = await this.prepareSyncRoundRequest(collections, pendingByCollection)
         const iqNode = this.buildSyncIqNode(prepared.collectionNodes)
         const payloadByCollection = await this.fetchSyncPayloadByCollection(
             iqNode,
@@ -290,7 +249,6 @@ export class WaAppStateSyncClient {
         const collectionOutcomes = await Promise.all(
             collections.map((collection) =>
                 this.processCollectionRound({
-                    context,
                     collection,
                     payloadByCollection,
                     pendingByCollection,
@@ -300,17 +258,26 @@ export class WaAppStateSyncClient {
                 })
             )
         )
-        return this.toSyncRoundResult(collectionOutcomes)
+        return {
+            results: collectionOutcomes.map((entry) => entry.result),
+            collectionsToRefetch: collectionOutcomes
+                .filter((entry) => entry.shouldRefetch)
+                .map((entry) => entry.collection),
+            stateChanged: collectionOutcomes.some((entry) => entry.stateChanged)
+        }
     }
 
     private async prepareSyncRoundRequest(
-        context: WaAppStateSyncContext,
         collections: readonly AppStateCollectionName[],
         pendingByCollection: ReadonlyMap<AppStateCollectionName, readonly WaAppStateMutationInput[]>
-    ): Promise<PreparedSyncRoundRequest> {
+    ): Promise<{
+        readonly collectionNodes: readonly BinaryNode[]
+        readonly outgoingContexts: ReadonlyMap<AppStateCollectionName, OutgoingPatchContext>
+        readonly skippedUploadCollections: ReadonlySet<AppStateCollectionName>
+    }> {
         const requests = await Promise.all(
             collections.map((collection) =>
-                this.buildCollectionSyncRequest(context, collection, pendingByCollection)
+                this.buildCollectionSyncRequest(collection, pendingByCollection)
             )
         )
         const outgoingContexts = new Map<AppStateCollectionName, OutgoingPatchContext>()
@@ -331,11 +298,15 @@ export class WaAppStateSyncClient {
     }
 
     private async buildCollectionSyncRequest(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         pendingByCollection: ReadonlyMap<AppStateCollectionName, readonly WaAppStateMutationInput[]>
-    ): Promise<PreparedCollectionRequest> {
-        const collectionState = await this.getCollectionState(context, collection)
+    ): Promise<{
+        readonly collection: AppStateCollectionName
+        readonly node: BinaryNode
+        readonly outgoingContext?: OutgoingPatchContext
+        readonly skippedUpload: boolean
+    }> {
+        const collectionState = await this.getCollectionState(collection)
         const hasPersistedState =
             collectionState.version > 0 ||
             collectionState.indexValueMap.size > 0 ||
@@ -365,7 +336,6 @@ export class WaAppStateSyncClient {
                 )
             } else {
                 const outgoing = await this.buildOutgoingPatch(
-                    context,
                     collection,
                     collectionState,
                     pendingMutations
@@ -428,7 +398,6 @@ export class WaAppStateSyncClient {
     }
 
     private async processCollectionRound({
-        context,
         collection,
         payloadByCollection,
         pendingByCollection,
@@ -436,7 +405,6 @@ export class WaAppStateSyncClient {
         outgoingContexts,
         skippedUploadCollections
     }: {
-        readonly context: WaAppStateSyncContext
         readonly collection: AppStateCollectionName
         readonly payloadByCollection: ReadonlyMap<AppStateCollectionName, CollectionResponsePayload>
         readonly pendingByCollection: ReadonlyMap<
@@ -446,38 +414,29 @@ export class WaAppStateSyncClient {
         readonly options: WaAppStateSyncOptions
         readonly outgoingContexts: ReadonlyMap<AppStateCollectionName, OutgoingPatchContext>
         readonly skippedUploadCollections: ReadonlySet<AppStateCollectionName>
-    }): Promise<CollectionSyncOutcome> {
+    }): Promise<{
+        readonly collection: AppStateCollectionName
+        readonly shouldRefetch: boolean
+        readonly stateChanged: boolean
+        readonly result: WaAppStateCollectionSyncResult
+    }> {
         const payload = payloadByCollection.get(collection)
         let shouldRefetch = false
         let collectionStateChanged = false
 
         if (!payload) {
             this.logger.warn('app-state sync response missing collection payload', { collection })
-            return {
+            return this.createCollectionOutcome(
                 collection,
-                shouldRefetch,
-                stateChanged: collectionStateChanged,
-                result: {
-                    collection,
-                    state: WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
-                }
-            }
+                WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
+            )
         }
 
         if (
             payload.state === WA_APP_STATE_COLLECTION_STATES.ERROR_FATAL ||
             payload.state === WA_APP_STATE_COLLECTION_STATES.ERROR_RETRY
         ) {
-            return {
-                collection,
-                shouldRefetch,
-                stateChanged: collectionStateChanged,
-                result: {
-                    collection,
-                    state: payload.state,
-                    version: payload.version
-                }
-            }
+            return this.createCollectionOutcome(collection, payload.state, payload.version)
         }
 
         const pendingMutationsCount = pendingByCollection.get(collection)?.length ?? 0
@@ -491,32 +450,23 @@ export class WaAppStateSyncClient {
         }
 
         if (payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT) {
-            return {
+            return this.createCollectionOutcome(
                 collection,
-                shouldRefetch,
-                stateChanged: collectionStateChanged,
-                result: {
-                    collection,
-                    state:
-                        pendingMutationsCount > 0
-                            ? WA_APP_STATE_COLLECTION_STATES.CONFLICT
-                            : WA_APP_STATE_COLLECTION_STATES.SUCCESS,
-                    version: payload.version
-                }
-            }
+                pendingMutationsCount > 0
+                    ? WA_APP_STATE_COLLECTION_STATES.CONFLICT
+                    : WA_APP_STATE_COLLECTION_STATES.SUCCESS,
+                payload.version,
+                shouldRefetch
+            )
         }
 
         if (payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT_HAS_MORE) {
-            return {
+            return this.createCollectionOutcome(
                 collection,
-                shouldRefetch,
-                stateChanged: collectionStateChanged,
-                result: {
-                    collection,
-                    state: payload.state,
-                    version: payload.version
-                }
-            }
+                payload.state,
+                payload.version,
+                shouldRefetch
+            )
         }
 
         try {
@@ -537,11 +487,7 @@ export class WaAppStateSyncClient {
                     payload.collection,
                     proto.SyncdSnapshot.decode(snapshotBytes)
                 )
-                const snapshotMutations = await this.applySnapshot(
-                    context,
-                    payload.collection,
-                    snapshot
-                )
+                const snapshotMutations = await this.applySnapshot(payload.collection, snapshot)
                 appliedMutations = appliedMutations.concat(snapshotMutations)
                 collectionStateChanged = true
             }
@@ -549,11 +495,7 @@ export class WaAppStateSyncClient {
             if (payload.patches.length > 0) {
                 const readyPatches = await this.resolveReadyPatches(payload, options)
                 for (const readyPatch of readyPatches) {
-                    const patchMutations = await this.applyPatch(
-                        context,
-                        payload.collection,
-                        readyPatch
-                    )
+                    const patchMutations = await this.applyPatch(payload.collection, readyPatch)
                     appliedMutations = appliedMutations.concat(patchMutations)
                     collectionStateChanged = true
                 }
@@ -565,7 +507,6 @@ export class WaAppStateSyncClient {
                     payload.version === outgoingContext.patchVersion
                 ) {
                     this.setCollectionState(
-                        context,
                         payload.collection,
                         outgoingContext.patchVersion,
                         outgoingContext.nextHash,
@@ -591,35 +532,55 @@ export class WaAppStateSyncClient {
                 version: payload.version,
                 appliedMutations: appliedMutations.length
             })
-            return {
+            return this.createCollectionOutcome(
                 collection,
+                payload.state,
+                payload.version,
                 shouldRefetch,
-                stateChanged: collectionStateChanged,
-                result: {
-                    collection: payload.collection,
-                    state: payload.state,
-                    version: payload.version,
-                    mutations: appliedMutations
-                }
-            }
+                collectionStateChanged,
+                appliedMutations
+            )
         } catch (error) {
             if (error instanceof WaAppStateMissingKeyError) {
                 this.logger.warn('app-state blocked by missing key', {
                     collection: payload.collection,
                     message: error.message
                 })
-                return {
+                return this.createCollectionOutcome(
                     collection,
+                    WA_APP_STATE_COLLECTION_STATES.BLOCKED,
+                    payload.version,
                     shouldRefetch,
-                    stateChanged: collectionStateChanged,
-                    result: {
-                        collection: payload.collection,
-                        state: WA_APP_STATE_COLLECTION_STATES.BLOCKED,
-                        version: payload.version
-                    }
-                }
+                    collectionStateChanged
+                )
             }
             throw error
+        }
+    }
+
+    private createCollectionOutcome(
+        collection: AppStateCollectionName,
+        state: WaAppStateCollectionSyncResult['state'],
+        version?: number,
+        shouldRefetch = false,
+        stateChanged = false,
+        mutations?: readonly WaAppStateMutation[]
+    ): {
+        readonly collection: AppStateCollectionName
+        readonly shouldRefetch: boolean
+        readonly stateChanged: boolean
+        readonly result: WaAppStateCollectionSyncResult
+    } {
+        return {
+            collection,
+            shouldRefetch,
+            stateChanged,
+            result: {
+                collection,
+                state,
+                version,
+                ...(mutations ? { mutations } : {})
+            }
         }
     }
 
@@ -662,16 +623,6 @@ export class WaAppStateSyncClient {
                 return this.validatePatch(payload.collection, readyPatch)
             })
         )
-    }
-
-    private toSyncRoundResult(outcomes: readonly CollectionSyncOutcome[]): SyncRoundResult {
-        return {
-            results: outcomes.map((entry) => entry.result),
-            collectionsToRefetch: outcomes
-                .filter((entry) => entry.shouldRefetch)
-                .map((entry) => entry.collection),
-            stateChanged: outcomes.some((entry) => entry.stateChanged)
-        }
     }
 
     private validateSnapshot(
@@ -736,7 +687,6 @@ export class WaAppStateSyncClient {
     }
 
     private async applySnapshot(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         snapshot: Proto.ISyncdSnapshot
     ): Promise<WaAppStateMutation[]> {
@@ -744,11 +694,8 @@ export class WaAppStateSyncClient {
             snapshot.version?.version,
             `snapshot.version.version (${collection})`
         )
-        if (!snapshot.mac) {
-            throw new Error(`snapshot for ${collection} is missing mac`)
-        }
         const keyId = decodeProtoBytes(snapshot.keyId?.id, `snapshot.keyId.id (${collection})`)
-        const keyData = await this.getKeyData(context, keyId)
+        const keyData = await this.getKeyData(keyId)
         if (!keyData) {
             throw new WaAppStateMissingKeyError(
                 `missing snapshot key ${keyIdToHex(keyId)} for ${collection}`
@@ -757,7 +704,7 @@ export class WaAppStateSyncClient {
 
         const indexValueMap = new Map<string, Uint8Array>()
         const mutations: WaAppStateMutation[] = []
-        const decryptedRecords = await this.decryptSnapshotRecords(context, collection, snapshot)
+        const decryptedRecords = await this.decryptSnapshotRecords(collection, snapshot)
         for (const { decrypted, recordKeyId } of decryptedRecords) {
             const indexMacHex = keyIdToHex(decrypted.indexMac)
             indexValueMap.set(indexMacHex, decrypted.valueMac)
@@ -787,15 +734,14 @@ export class WaAppStateSyncClient {
             version,
             collection
         )
-        if (!uint8Equal(expectedSnapshotMac, snapshot.mac)) {
+        if (!uint8Equal(expectedSnapshotMac, snapshot.mac as Uint8Array)) {
             throw new Error(`snapshot MAC mismatch for ${collection}`)
         }
-        this.setCollectionState(context, collection, version, ltHash, indexValueMap)
+        this.setCollectionState(collection, version, ltHash, indexValueMap)
         return mutations
     }
 
     private async applyPatch(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         patch: Proto.ISyncdPatch
     ): Promise<WaAppStateMutation[]> {
@@ -803,7 +749,7 @@ export class WaAppStateSyncClient {
             patch.version?.version,
             `patch.version.version (${collection})`
         )
-        const current = await this.getCollectionState(context, collection)
+        const current = await this.getCollectionState(collection)
         if (current.version !== patchVersion - 1) {
             throw new Error(
                 `patch version mismatch for ${collection}: local=${current.version}, incoming=${patchVersion}`
@@ -811,14 +757,14 @@ export class WaAppStateSyncClient {
         }
 
         const patchKeyId = decodeProtoBytes(patch.keyId?.id, `patch.keyId.id (${collection})`)
-        const patchKeyData = await this.getKeyData(context, patchKeyId)
+        const patchKeyData = await this.getKeyData(patchKeyId)
         if (!patchKeyData) {
             throw new WaAppStateMissingKeyError(
                 `missing patch key ${keyIdToHex(patchKeyId)} for ${collection}`
             )
         }
 
-        const decryptedMutations = await this.decryptPatchMutations(context, collection, patch)
+        const decryptedMutations = await this.decryptPatchMutations(collection, patch)
         const nextState = await this.computeNextCollectionState(
             current.hash,
             current.indexValueMap,
@@ -837,31 +783,22 @@ export class WaAppStateSyncClient {
             nextState.hash,
             decryptedMutations
         )
-        this.setCollectionState(
-            context,
-            collection,
-            patchVersion,
-            nextState.hash,
-            nextState.indexValueMap
-        )
-        return decryptedMutations.map((mutation) => ({
-            collection: mutation.collection,
-            operation: mutation.operation,
-            index: mutation.index,
-            value: mutation.value,
-            version: mutation.version,
-            indexMac: mutation.indexMac,
-            valueMac: mutation.valueMac,
-            keyId: mutation.keyId,
-            timestamp: mutation.timestamp
-        }))
+        this.setCollectionState(collection, patchVersion, nextState.hash, nextState.indexValueMap)
+        return decryptedMutations.map(({ operationCode, ...mutation }) => {
+            void operationCode
+            return mutation
+        })
     }
 
     private async decryptSnapshotRecords(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         snapshot: Proto.ISyncdSnapshot
-    ): Promise<readonly DecryptedSnapshotRecord[]> {
+    ): Promise<
+        readonly {
+            readonly decrypted: Awaited<ReturnType<WaAppStateCrypto['decryptMutation']>>
+            readonly recordKeyId: Uint8Array
+        }[]
+    > {
         return Promise.all(
             (snapshot.records ?? []).map(async (record) => {
                 const indexMac = decodeProtoBytes(
@@ -876,7 +813,7 @@ export class WaAppStateSyncClient {
                     record.keyId?.id,
                     `snapshot.record.keyId.id (${collection})`
                 )
-                const recordKeyData = await this.getKeyData(context, recordKeyId)
+                const recordKeyData = await this.getKeyData(recordKeyId)
                 if (!recordKeyData) {
                     throw new WaAppStateMissingKeyError(
                         `missing snapshot mutation key ${keyIdToHex(recordKeyId)} for ${collection}`
@@ -898,7 +835,6 @@ export class WaAppStateSyncClient {
     }
 
     private async decryptPatchMutations(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         patch: Proto.ISyncdPatch
     ): Promise<readonly DecryptedPatchMutation[]> {
@@ -924,7 +860,7 @@ export class WaAppStateSyncClient {
                     record.keyId?.id,
                     `patch.record.keyId.id (${collection})`
                 )
-                const recordKeyData = await this.getKeyData(context, recordKeyId)
+                const recordKeyData = await this.getKeyData(recordKeyId)
                 if (!recordKeyData) {
                     throw new WaAppStateMissingKeyError(
                         `missing mutation key ${keyIdToHex(recordKeyId)} for ${collection}`
@@ -992,7 +928,6 @@ export class WaAppStateSyncClient {
     }
 
     private async buildOutgoingPatch(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         snapshot: WaAppStateCollectionStoreState,
         pendingMutations: readonly WaAppStateMutationInput[]
@@ -1085,10 +1020,7 @@ export class WaAppStateSyncClient {
         mutations: readonly MacMutation[],
         collection: AppStateCollectionName
     ): Promise<{ readonly hash: Uint8Array; readonly indexValueMap: Map<string, Uint8Array> }> {
-        const indexValueMap = new Map<string, Uint8Array>()
-        for (const [indexMacHex, valueMac] of baseMap.entries()) {
-            indexValueMap.set(indexMacHex, valueMac)
-        }
+        const indexValueMap = new Map(baseMap)
 
         const addValues: Uint8Array[] = []
         const removeValues: Uint8Array[] = []
@@ -1121,14 +1053,8 @@ export class WaAppStateSyncClient {
     }
 
     private normalizeProtoLong(value: unknown, field: string): number {
-        if (value === null || value === undefined) {
-            return 0
-        }
-        if (typeof value !== 'number' && !isProtoLongLike(value)) {
-            throw new Error(`invalid ${field}: expected protobuf Long or number`)
-        }
         try {
-            return longToNumber(value)
+            return longToNumber(value as number | { toNumber(): number } | null | undefined)
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error)
             throw new Error(`invalid ${field}: ${reason}`)
@@ -1165,10 +1091,8 @@ export class WaAppStateSyncClient {
         return compacted
     }
 
-    private async getKeyData(
-        context: WaAppStateSyncContext,
-        keyId: Uint8Array
-    ): Promise<Uint8Array | null> {
+    private async getKeyData(keyId: Uint8Array): Promise<Uint8Array | null> {
+        const context = this.requireSyncContext()
         const keyHex = keyIdToHex(keyId)
         if (context.keys.has(keyHex)) {
             return context.keys.get(keyHex) ?? null
@@ -1179,9 +1103,9 @@ export class WaAppStateSyncClient {
     }
 
     private async getCollectionState(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName
     ): Promise<WaAppStateCollectionStoreState> {
+        const context = this.requireSyncContext()
         const cached = context.collections.get(collection)
         if (cached) {
             return cached
@@ -1192,12 +1116,12 @@ export class WaAppStateSyncClient {
     }
 
     private setCollectionState(
-        context: WaAppStateSyncContext,
         collection: AppStateCollectionName,
         version: number,
         hash: Uint8Array,
         indexValueMap: ReadonlyMap<string, Uint8Array>
     ): void {
+        const context = this.requireSyncContext()
         context.collections.set(collection, {
             version,
             hash,
@@ -1206,7 +1130,8 @@ export class WaAppStateSyncClient {
         context.dirtyCollections.add(collection)
     }
 
-    private async persistCollectionUpdates(context: WaAppStateSyncContext): Promise<void> {
+    private async persistCollectionUpdates(): Promise<void> {
+        const context = this.requireSyncContext()
         const updates = Array.from(context.dirtyCollections.values())
             .map((collection) => {
                 const state = context.collections.get(collection)
@@ -1224,19 +1149,13 @@ export class WaAppStateSyncClient {
         if (updates.length === 0) {
             return
         }
-        if (typeof this.store.setCollectionStates === 'function') {
-            await this.store.setCollectionStates(updates)
-            return
+        await this.store.setCollectionStates(updates)
+    }
+
+    private requireSyncContext(): NonNullable<WaAppStateSyncClient['syncContext']> {
+        if (!this.syncContext) {
+            throw new Error('app-state sync context is not initialized')
         }
-        await Promise.all(
-            updates.map((update) =>
-                this.store.setCollectionState(
-                    update.collection,
-                    update.version,
-                    update.hash,
-                    update.indexValueMap
-                )
-            )
-        )
+        return this.syncContext
     }
 }

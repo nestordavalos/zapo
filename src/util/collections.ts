@@ -5,9 +5,7 @@ export function setBoundedMapEntry<K, V>(
     maxEntries: number,
     onEvict?: (key: K, value: V) => void
 ): void {
-    if (map.has(key)) {
-        map.delete(key)
-    }
+    map.delete(key)
     map.set(key, value)
     while (map.size > maxEntries) {
         const oldest = map.entries().next().value

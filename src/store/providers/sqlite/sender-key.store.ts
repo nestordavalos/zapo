@@ -150,10 +150,8 @@ export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKey
     }
 
     public async deleteDeviceSenderKey(target: SignalAddress, groupId?: string): Promise<number> {
-        const db = await this.getConnection()
         const sender = toSignalAddressParts(target)
-        db.exec('BEGIN')
-        try {
+        return this.withTransaction((db) => {
             const senderCount = this.countDelete(db, 'sender_keys', sender, groupId)
             const distributionCount = this.countDelete(
                 db,
@@ -161,12 +159,8 @@ export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKey
                 sender,
                 groupId
             )
-            db.exec('COMMIT')
             return senderCount + distributionCount
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     public async markForgetSenderKey(

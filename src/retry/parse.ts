@@ -26,11 +26,14 @@ function parseBigEndianUint(bytes: Uint8Array, field: string): number {
     if (bytes.byteLength === 0 || bytes.byteLength > 4) {
         throw new Error(`${field} has invalid byte length`)
     }
-    let out = 0
-    for (let index = 0; index < bytes.byteLength; index += 1) {
-        out = (out << 8) | bytes[index]
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    if (bytes.byteLength === 1) {
+        return view.getUint8(0)
     }
-    return out
+    if (bytes.byteLength === 2) {
+        return view.getUint16(0)
+    }
+    return bytes.byteLength === 3 ? (view.getUint16(0) << 8) | view.getUint8(2) : view.getUint32(0)
 }
 
 function parseRetryType(value: string | undefined): WaRetryReceiptType | null {

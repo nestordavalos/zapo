@@ -25,3 +25,8 @@ export {
 } from '@transport/node/builders/message'
 export { buildRetryReceiptNode } from '@transport/node/builders/retry'
 export { buildPreKeyUploadIq } from '@transport/node/builders/prekeys'
+export {
+    buildCreateGroupIq,
+    buildGroupParticipantChangeIq,
+    buildLeaveGroupIq
+} from '@transport/node/builders/group'

@@ -58,10 +58,7 @@ export class WaKeepAlive {
         })
         this.generation += 1
         this.inFlight = false
-        if (this.timer) {
-            clearTimeout(this.timer)
-            this.timer = null
-        }
+        this.clearTimer()
         this.schedule(this.generation)
     }
 
@@ -69,20 +66,14 @@ export class WaKeepAlive {
         this.logger.info('keepalive stop')
         this.generation += 1
         this.inFlight = false
-        if (!this.timer) {
-            return
-        }
-        clearTimeout(this.timer)
-        this.timer = null
+        this.clearTimer()
     }
 
     private schedule(generation: number): void {
         if (generation !== this.generation) {
             return
         }
-        if (this.timer) {
-            clearTimeout(this.timer)
-        }
+        this.clearTimer()
         const nextDelayMs = this.computeNextDelayMs()
         this.timer = setTimeout(() => {
             this.timer = null
@@ -153,14 +144,15 @@ export class WaKeepAlive {
         if (!Number.isFinite(value)) {
             return KEEPALIVE_DEFAULT_JITTER_RATIO
         }
-        return Math.min(Math.max(value ?? 0, 0), KEEPALIVE_MAX_JITTER_RATIO)
+        const normalized = value as number
+        return Math.min(Math.max(normalized, 0), KEEPALIVE_MAX_JITTER_RATIO)
     }
 
     private normalizeMinJitterMs(value: number | undefined): number {
         if (!Number.isFinite(value)) {
             return KEEPALIVE_DEFAULT_MIN_JITTER_MS
         }
-        return Math.max(0, Math.trunc(value ?? 0))
+        return Math.max(0, Math.trunc(value as number))
     }
 
     private computeNextDelayMs(): number {
@@ -177,5 +169,13 @@ export class WaKeepAlive {
         }
         const offsetMs = Math.floor(Math.random() * (jitterWindowMs * 2 + 1) - jitterWindowMs)
         return Math.max(1, this.intervalMs + offsetMs)
+    }
+
+    private clearTimer(): void {
+        if (!this.timer) {
+            return
+        }
+        clearTimeout(this.timer)
+        this.timer = null
     }
 }

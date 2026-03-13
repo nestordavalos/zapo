@@ -2,41 +2,19 @@ import type { BinaryNode } from '@transport/types'
 import { base64ToBytes, TEXT_ENCODER } from '@util/bytes'
 
 export function getNodeChildren(node: BinaryNode): readonly BinaryNode[] {
-    if (!Array.isArray(node.content)) {
-        return []
-    }
-    return node.content
+    return Array.isArray(node.content) ? node.content : []
 }
 
 export function findNodeChild(node: BinaryNode, tag: string): BinaryNode | undefined {
-    const children = getNodeChildren(node)
-    for (let index = 0; index < children.length; index += 1) {
-        const child = children[index]
-        if (child.tag === tag) {
-            return child
-        }
-    }
-    return undefined
+    return getNodeChildren(node).find((child) => child.tag === tag)
 }
 
 export function getFirstNodeChild(node: BinaryNode): BinaryNode | undefined {
-    const children = getNodeChildren(node)
-    if (children.length === 0) {
-        return undefined
-    }
-    return children[0]
+    return getNodeChildren(node)[0]
 }
 
 export function getNodeChildrenByTag(node: BinaryNode, tag: string): readonly BinaryNode[] {
-    const children = getNodeChildren(node)
-    const out: BinaryNode[] = []
-    for (let index = 0; index < children.length; index += 1) {
-        const child = children[index]
-        if (child.tag === tag) {
-            out.push(child)
-        }
-    }
-    return out
+    return getNodeChildren(node).filter((child) => child.tag === tag)
 }
 
 export function hasNodeChild(node: BinaryNode, tag: string): boolean {

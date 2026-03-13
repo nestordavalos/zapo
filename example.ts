@@ -26,15 +26,7 @@ async function main(): Promise<void> {
 
     const logger = await createPinoLogger({
         level: resolveLogLevel('info'),
-        pretty:
-            process.env.EXAMPLE_PINO_PRETTY === '0'
-                ? false
-                : {
-                      options: {
-                          colorize: true,
-                          translateTime: 'SYS:standard'
-                      }
-                  }
+        pretty: true
     })
 
     const sessionId = process.env.EXAMPLE_SESSION_ID ?? 'default'

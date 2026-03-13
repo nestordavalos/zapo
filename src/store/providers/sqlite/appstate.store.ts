@@ -61,10 +61,8 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
     }
 
     public async upsertSyncKeys(keys: readonly WaAppStateSyncKey[]): Promise<number> {
-        const db = await this.getConnection()
         let inserted = 0
-        db.exec('BEGIN')
-        try {
+        await this.withTransaction((db) => {
             for (const key of keys) {
                 const existing = db.get<KeyDataRow>(
                     `SELECT key_data
@@ -107,13 +105,8 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
                 )
                 inserted += 1
             }
-
-            db.exec('COMMIT')
-            return inserted
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
+        return inserted
     }
 
     public async getSyncKeyData(keyId: Uint8Array): Promise<Uint8Array | null> {
@@ -191,31 +184,13 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
         }
     }
 
-    public async setCollectionState(
-        collection: AppStateCollectionName,
-        version: number,
-        hash: Uint8Array,
-        indexValueMap: ReadonlyMap<string, Uint8Array>
-    ): Promise<void> {
-        await this.setCollectionStates([
-            {
-                collection,
-                version,
-                hash,
-                indexValueMap
-            }
-        ])
-    }
-
     public async setCollectionStates(
         updates: readonly WaAppStateCollectionStateUpdate[]
     ): Promise<void> {
         if (updates.length === 0) {
             return
         }
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        await this.withTransaction((db) => {
             for (const update of updates) {
                 db.run(
                     `INSERT INTO appstate_collection_versions (
@@ -247,17 +222,11 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
                     )
                 }
             }
-            db.exec('COMMIT')
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     public async clear(): Promise<void> {
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        await this.withTransaction((db) => {
             db.run('DELETE FROM appstate_sync_keys WHERE session_id = ?', [this.options.sessionId])
             db.run('DELETE FROM appstate_collection_versions WHERE session_id = ?', [
                 this.options.sessionId
@@ -265,10 +234,6 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
             db.run('DELETE FROM appstate_collection_index_values WHERE session_id = ?', [
                 this.options.sessionId
             ])
-            db.exec('COMMIT')
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 }

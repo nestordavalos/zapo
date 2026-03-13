@@ -1,5 +1,5 @@
 import type { CryptoKey } from '@crypto'
-import { hkdfWithBytesInfo, importHmacKey, hmacSign } from '@crypto'
+import { hkdf, importHmacKey, hmacSign } from '@crypto'
 import {
     CHAIN_KEY_LABEL,
     MAX_UNUSED_KEYS,
@@ -128,7 +128,7 @@ async function deriveSenderKeyMsgKeyFromState(
     const nextChainKey = nextChainRaw.subarray(0, 32)
     const [nextHmacKey, messageSeed] = await Promise.all([
         importHmacKey(nextChainKey),
-        hkdfWithBytesInfo(messageInputKey, WHISPER_GROUP_INFO, 50)
+        hkdf(messageInputKey, null, WHISPER_GROUP_INFO, 50)
     ])
     return {
         nextState: {

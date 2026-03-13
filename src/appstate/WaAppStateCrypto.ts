@@ -27,6 +27,7 @@ import type { Proto } from '@proto'
 import { WA_APP_STATE_KDF_INFO } from '@protocol/constants'
 import { bytesToBase64 } from '@util/base64'
 import { concatBytes, EMPTY_BYTES, TEXT_DECODER, TEXT_ENCODER, uint8Equal } from '@util/bytes'
+import { setBoundedMapEntry } from '@util/collections'
 
 interface WaAppStateDerivedKeys {
     readonly indexKey: Uint8Array
@@ -50,21 +51,16 @@ interface WaAppStateDecryptedMutation {
     readonly valueMac: Uint8Array
 }
 
-interface WaAppStateCryptoOptions {
-    readonly derivedKeysCacheMaxSize?: number
-}
-
 const DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE = 256
 
 export class WaAppStateCrypto {
     private readonly derivedKeysCache: Map<string, WaAppStateDerivedKeys>
     private readonly derivedKeysCacheMaxSize: number
 
-    public constructor(options: WaAppStateCryptoOptions = {}) {
+    public constructor(derivedKeysCacheMaxSize = DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE) {
         this.derivedKeysCache = new Map()
-        this.derivedKeysCacheMaxSize = this.normalizeDerivedKeysCacheMaxSize(
-            options.derivedKeysCacheMaxSize
-        )
+        this.derivedKeysCacheMaxSize =
+            this.normalizeDerivedKeysCacheMaxSize(derivedKeysCacheMaxSize)
     }
 
     public clearCache(): void {
@@ -331,17 +327,14 @@ export class WaAppStateCrypto {
     }
 
     private generateAssociatedData(operation: number, keyId: Uint8Array): Uint8Array {
-        const opByte =
-            operation === proto.SyncdMutation.SyncdOperation.SET
-                ? proto.SyncdMutation.SyncdOperation.SET
-                : operation === proto.SyncdMutation.SyncdOperation.REMOVE
-                  ? proto.SyncdMutation.SyncdOperation.REMOVE
-                  : -1
-        if (opByte < 0) {
+        if (
+            operation !== proto.SyncdMutation.SyncdOperation.SET &&
+            operation !== proto.SyncdMutation.SyncdOperation.REMOVE
+        ) {
             throw new Error(`unsupported syncd operation ${operation}`)
         }
         const out = new Uint8Array(1 + keyId.byteLength)
-        out[0] = opByte + 1
+        out[0] = operation + 1
         out.set(keyId, 1)
         return out
     }
@@ -362,24 +355,13 @@ export class WaAppStateCrypto {
         if (!Number.isFinite(value)) {
             return DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE
         }
-        return Math.max(0, Math.trunc(value ?? 0))
+        return Math.max(0, Math.trunc(value as number))
     }
 
     private touchDerivedKeysCacheEntry(cacheKey: string, keys: WaAppStateDerivedKeys): void {
         if (this.derivedKeysCacheMaxSize <= 0) {
             return
         }
-        if (this.derivedKeysCache.has(cacheKey)) {
-            this.derivedKeysCache.delete(cacheKey)
-            this.derivedKeysCache.set(cacheKey, keys)
-            return
-        }
-        if (this.derivedKeysCache.size >= this.derivedKeysCacheMaxSize) {
-            const oldestKey = this.derivedKeysCache.keys().next().value
-            if (oldestKey !== undefined) {
-                this.derivedKeysCache.delete(oldestKey)
-            }
-        }
-        this.derivedKeysCache.set(cacheKey, keys)
+        setBoundedMapEntry(this.derivedKeysCache, cacheKey, keys, this.derivedKeysCacheMaxSize)
     }
 }

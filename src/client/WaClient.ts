@@ -6,6 +6,7 @@ import { downloadExternalBlobReference } from '@appstate/utils'
 import type { WaAppStateSyncClient } from '@appstate/WaAppStateSyncClient'
 import type { WaAuthCredentials } from '@auth/types'
 import type { WaAuthClient } from '@auth/WaAuthClient'
+import type { WaGroupCoordinator } from '@client/coordinators/WaGroupCoordinator'
 import type { WaIncomingNodeCoordinator } from '@client/coordinators/WaIncomingNodeCoordinator'
 import type { WaMessageDispatchCoordinator } from '@client/coordinators/WaMessageDispatchCoordinator'
 import type { WaPassiveTasksCoordinator } from '@client/coordinators/WaPassiveTasksCoordinator'
@@ -83,6 +84,7 @@ export class WaClient extends EventEmitter {
     public readonly mediaTransfer!: WaMediaTransferClient
     public readonly messageDispatch!: WaMessageDispatchCoordinator
     public readonly messageClient!: WaMessageClient
+    public readonly groupCoordinator!: WaGroupCoordinator
     private clockSkewMs: number | null = null
     private mediaConnCache: WaMediaConn | null = null
     private comms: WaComms | null = null
@@ -102,25 +104,25 @@ export class WaClient extends EventEmitter {
         const host: WaClientDependencyHost = {
             sendNode: (node) => this.sendNode(node),
             query: (node, timeoutMs) => this.query(node, timeoutMs),
-            queryWithContext: (context, node, timeoutMs, contextData) =>
-                this.queryWithContext(context, node, timeoutMs, contextData),
+            queryWithContext: this.queryWithContext.bind(this),
             syncAppState: () => this.syncAppState().then(() => {}),
-            emitEvent: (event, ...args) => this.emitEvent(event, ...args),
-            handleIncomingMessageEvent: (event) => this.handleIncomingMessageEvent(event),
-            handleError: (error) => this.handleError(error),
-            scheduleReconnectAfterPairing: () => this.scheduleReconnectAfterPairing(),
-            updateClockSkewFromSuccess: (serverUnixSeconds) =>
-                this.updateClockSkewFromSuccess(serverUnixSeconds),
-            getComms: () => this.getComms(),
-            getMediaConnCache: () => this.getMediaConnCache(),
-            setMediaConnCache: (mediaConn) => this.setMediaConnCache(mediaConn),
-            disconnect: () => this.disconnect(),
-            clearStoredState: () => this.clearStoredState(),
-            connect: () => this.connect(),
+            emitEvent: this.emit.bind(this) as WaClientDependencyHost['emitEvent'],
+            handleIncomingMessageEvent: this.handleIncomingMessageEvent.bind(this),
+            handleError: this.handleError.bind(this),
+            scheduleReconnectAfterPairing: this.scheduleReconnectAfterPairing.bind(this),
+            updateClockSkewFromSuccess: this.updateClockSkewFromSuccess.bind(this),
+            getComms: () => this.comms,
+            getMediaConnCache: () => this.mediaConnCache,
+            setMediaConnCache: (mediaConn) => {
+                this.mediaConnCache = mediaConn
+            },
+            disconnect: this.disconnect.bind(this),
+            clearStoredState: this.clearStoredState.bind(this),
+            connect: this.connect.bind(this),
             shouldQueueDanglingReceipt: (node, error) =>
                 this.shouldQueueDanglingReceipt(node, error),
-            enqueueDanglingReceipt: (node) => this.enqueueDanglingReceipt(node),
-            takeDanglingReceipts: () => this.takeDanglingReceipts()
+            enqueueDanglingReceipt: this.enqueueDanglingReceipt.bind(this),
+            takeDanglingReceipts: () => this.danglingReceipts.splice(0)
         }
         const dependencies = buildWaClientDependencies({
             base,
@@ -171,41 +173,11 @@ export class WaClient extends EventEmitter {
         return super.off(event, listener as (...args: unknown[]) => void)
     }
 
-    public override addListener<K extends keyof WaClientEventMap>(
-        event: K,
-        listener: WaClientEventMap[K]
-    ): this {
-        return super.addListener(event, listener as (...args: unknown[]) => void)
-    }
-
     public override emit<K extends keyof WaClientEventMap>(
         event: K,
         ...args: Parameters<WaClientEventMap[K]>
     ): boolean {
         return super.emit(event, ...args)
-    }
-
-    private emitEvent<K extends keyof WaClientEventMap>(
-        event: K,
-        ...args: Parameters<WaClientEventMap[K]>
-    ): void {
-        this.emit(event, ...args)
-    }
-
-    private getComms(): WaComms | null {
-        return this.comms
-    }
-
-    private getMediaConnCache(): WaMediaConn | null {
-        return this.mediaConnCache
-    }
-
-    private setMediaConnCache(mediaConn: WaMediaConn | null): void {
-        this.mediaConnCache = mediaConn
-    }
-
-    private takeDanglingReceipts(): BinaryNode[] {
-        return this.danglingReceipts.splice(0)
     }
 
     public getState() {
@@ -581,10 +553,6 @@ export class WaClient extends EventEmitter {
         if (node.tag !== WA_MESSAGE_TAGS.RECEIPT) {
             return false
         }
-        return this.isDanglingReceiptSendError(error)
-    }
-
-    private isDanglingReceiptSendError(error: Error): boolean {
         const normalized = error.message.trim().toLowerCase()
         return (
             normalized === 'comms is not connected' ||
@@ -595,9 +563,6 @@ export class WaClient extends EventEmitter {
     }
 
     private enqueueDanglingReceipt(node: BinaryNode): void {
-        if (node.tag !== WA_MESSAGE_TAGS.RECEIPT) {
-            return
-        }
         if (this.danglingReceipts.length >= WA_DEFAULTS.MAX_DANGLING_RECEIPTS) {
             this.danglingReceipts.shift()
         }

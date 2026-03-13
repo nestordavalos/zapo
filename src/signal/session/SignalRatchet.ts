@@ -3,7 +3,6 @@ import {
     aesCbcDecrypt,
     aesCbcEncrypt,
     hkdf,
-    hkdfSplit,
     importAesCbcKey,
     importHmacKey,
     hmacSign,
@@ -21,22 +20,15 @@ import {
 } from '@signal/constants'
 import {
     detachSession,
-    ecdh,
-    makeFreshRecvChain,
-    makeFreshSendChain,
-    makeRecvChain,
-    makeSendChain,
-    ratchetSession,
-    setPrevSessions,
-    snapshotToRecord,
-    updateChains
+    calculateRatchet,
+    generateSerializedKeyPair,
+    snapshotToRecord
 } from '@signal/session/SignalSession'
 import type {
     ParsedPreKeySignalMessage,
     ParsedSignalMessage,
     SignalMessageKey,
     SignalRecvChain,
-    SignalSerializedKeyPair,
     SignalSessionRecord
 } from '@signal/types'
 import { concatBytes, removeAt, uint8Equal } from '@util/bytes'
@@ -83,19 +75,6 @@ export async function deriveMsgKey(
     }
 }
 
-export async function calculateRatchet(
-    rootKey: Uint8Array,
-    localRatchet: SignalSerializedKeyPair,
-    remoteRatchetPubKey: Uint8Array
-): Promise<{ readonly rootKey: Uint8Array; readonly chainKey: Uint8Array }> {
-    const sharedSecret = await ecdh(localRatchet.privKey, remoteRatchetPubKey)
-    const [nextRootKey, chainKey] = await hkdfSplit(sharedSecret, rootKey, 'WhisperRatchet')
-    return {
-        rootKey: nextRootKey,
-        chainKey
-    }
-}
-
 export async function selectMessageKey(
     chain: SignalRecvChain,
     targetCounter: number
@@ -114,12 +93,12 @@ export async function selectMessageKey(
         const nextUnused = removeAt(unused, idx)
         return {
             messageKey,
-            updatedChain: makeRecvChain(
-                chain.ratchetPubKey,
-                chain.nextMsgIndex,
-                chain.chainKey,
-                nextUnused
-            )
+            updatedChain: {
+                ratchetPubKey: chain.ratchetPubKey,
+                nextMsgIndex: chain.nextMsgIndex,
+                chainKey: chain.chainKey,
+                unusedMsgKeys: nextUnused
+            }
         }
     }
 
@@ -149,12 +128,12 @@ export async function selectMessageKey(
 
     return {
         messageKey: currentMessageKey,
-        updatedChain: makeRecvChain(
-            chain.ratchetPubKey,
-            targetCounter + 1,
-            chainState.chainKey,
-            nextUnused
-        )
+        updatedChain: {
+            ratchetPubKey: chain.ratchetPubKey,
+            nextMsgIndex: targetCounter + 1,
+            chainKey: chainState.chainKey,
+            unusedMsgKeys: nextUnused
+        }
     }
 }
 
@@ -233,22 +212,20 @@ export async function encryptMsg(
         output = prependVersion(preKeyPayload, SIGNAL_VERSION)
     }
 
-    const updatedSendChain = makeSendChain(
-        session.sendChain.ratchetKey,
-        messageKey.index + 1,
-        nextChainKey
-    )
-    const updated = updateChains(session, session.recvChains, updatedSendChain)
+    const updated = {
+        ...session,
+        sendChain: {
+            ratchetKey: session.sendChain.ratchetKey,
+            nextMsgIndex: messageKey.index + 1,
+            chainKey: nextChainKey
+        }
+    }
     return [updated, { type, ciphertext: output }]
 }
 
 export async function decryptMsg(
     session: SignalSessionRecord | null,
     parsed: ParsedSignalMessage,
-    decryptMsgFromSessionFn: (
-        session: SignalSessionRecord,
-        message: ParsedSignalMessage | ParsedPreKeySignalMessage
-    ) => Promise<readonly [SignalSessionRecord, Uint8Array]>,
     onPrevSessionDecryptError?: (error: Error, previousSessionIndex: number) => void
 ): Promise<DecryptOutcome> {
     if (!session) {
@@ -256,23 +233,25 @@ export async function decryptMsg(
     }
 
     try {
-        const [updatedSession, plaintext] = await decryptMsgFromSessionFn(session, parsed)
+        const [updatedSession, plaintext] = await decryptMsgFromSession(session, parsed)
         return {
             updatedSession,
             plaintext,
             newSessionInfo: null
         }
     } catch (error) {
-        const prev = session.prevSessions
-        for (let i = 0; i < prev.length; i += 1) {
-            const prevSession = snapshotToRecord(prev[i])
+        for (let i = 0; i < session.prevSessions.length; i += 1) {
+            const prevSession = snapshotToRecord(session.prevSessions[i])
             try {
-                const [updatedPrev, plaintext] = await decryptMsgFromSessionFn(prevSession, parsed)
-                const updatedSession = setPrevSessions(updatedPrev, [
-                    detachSession(session),
-                    ...session.prevSessions.slice(0, i),
-                    ...session.prevSessions.slice(i + 1)
-                ])
+                const [updatedPrev, plaintext] = await decryptMsgFromSession(prevSession, parsed)
+                const updatedSession = {
+                    ...updatedPrev,
+                    prevSessions: [
+                        detachSession(session),
+                        ...session.prevSessions.slice(0, i),
+                        ...session.prevSessions.slice(i + 1)
+                    ]
+                }
                 return {
                     updatedSession,
                     plaintext,
@@ -295,8 +274,7 @@ export async function decryptMsg(
 
 export async function decryptMsgFromSession(
     session: SignalSessionRecord,
-    message: ParsedSignalMessage | ParsedPreKeySignalMessage,
-    generateSerializedKeyPair: () => Promise<SignalSerializedKeyPair>
+    message: ParsedSignalMessage | ParsedPreKeySignalMessage
 ): Promise<readonly [SignalSessionRecord, Uint8Array]> {
     const ratchetPubKey = toSerializedPubKey(message.ratchetPubKey)
     const recvChainIndex = session.recvChains.findIndex((entry) =>
@@ -311,7 +289,12 @@ export async function decryptMsgFromSession(
             session.sendChain.ratchetKey,
             ratchetPubKey
         )
-        const freshRecvChain = makeFreshRecvChain(ratchetPubKey, recvRatchet.chainKey)
+        const freshRecvChain: SignalRecvChain = {
+            ratchetPubKey,
+            nextMsgIndex: 0,
+            chainKey: recvRatchet.chainKey,
+            unusedMsgKeys: []
+        }
         const selected = await selectMessageKey(freshRecvChain, message.counter)
         selectedMessageKey = selected.messageKey
 
@@ -323,18 +306,27 @@ export async function decryptMsgFromSession(
         )
         const nextRecvChains = session.recvChains.slice(-MAX_TRACKED_RECV_CHAINS)
         nextRecvChains.push(selected.updatedChain)
-        updatedSession = ratchetSession(
-            session,
-            nextRecvChains,
-            makeFreshSendChain(newSendRatchet, sendRatchet.chainKey),
-            sendRatchet.rootKey
-        )
+        updatedSession = {
+            ...session,
+            rootKey: sendRatchet.rootKey,
+            recvChains: nextRecvChains,
+            sendChain: {
+                ratchetKey: newSendRatchet,
+                nextMsgIndex: 0,
+                chainKey: sendRatchet.chainKey
+            },
+            initialExchangeInfo: null,
+            prevSendChainHighestIndex: Math.max(session.sendChain.nextMsgIndex - 1, 0)
+        }
     } else {
         const selected = await selectMessageKey(session.recvChains[recvChainIndex], message.counter)
         selectedMessageKey = selected.messageKey
         const nextRecvChains = session.recvChains.slice()
         nextRecvChains[recvChainIndex] = selected.updatedChain
-        updatedSession = updateChains(session, nextRecvChains, session.sendChain)
+        updatedSession = {
+            ...session,
+            recvChains: nextRecvChains
+        }
     }
 
     const [cipherKey, macKey] = await Promise.all([

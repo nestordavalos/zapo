@@ -32,13 +32,7 @@ interface WaIncomingMessageAckHandlerOptions {
 }
 
 function pickMessageSenderJid(node: BinaryNode): string | undefined {
-    if (node.attrs.participant) {
-        return node.attrs.participant
-    }
-    if (node.attrs.from) {
-        return node.attrs.from
-    }
-    return undefined
+    return node.attrs.participant ?? node.attrs.from
 }
 
 function pickMessageChatJid(node: BinaryNode): string | undefined {
@@ -50,7 +44,7 @@ function parseMessageTimestamp(value: string | undefined): number | undefined {
         return undefined
     }
     const parsed = Number.parseInt(value, 10)
-    if (!Number.isFinite(parsed)) {
+    if (!Number.isSafeInteger(parsed)) {
         return undefined
     }
     return parsed

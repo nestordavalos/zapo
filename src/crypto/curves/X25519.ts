@@ -2,22 +2,10 @@ import { webcrypto } from 'node:crypto'
 
 import { assert32, decodeBase64Url } from '@crypto/core/encoding'
 import { X25519_PKCS8_PREFIX } from '@crypto/curves/constants'
-import type { SignalKeyPair } from '@crypto/curves/types'
+import { pkcs8FromRawPrivate, type SignalKeyPair, type SubtleKeyPair } from '@crypto/curves/types'
 import { bigIntToBytesLE, bytesToBigIntLE } from '@crypto/math/le'
 import { FIELD_P, mod, modInv } from '@crypto/math/mod'
 import { toBytesView } from '@util/bytes'
-
-type SubtleKeyPair = {
-    privateKey: webcrypto.CryptoKey
-    publicKey: webcrypto.CryptoKey
-}
-
-function pkcs8FromRawPrivate(raw: Uint8Array): Uint8Array {
-    const out = new Uint8Array(X25519_PKCS8_PREFIX.length + raw.length)
-    out.set(X25519_PKCS8_PREFIX, 0)
-    out.set(raw, X25519_PKCS8_PREFIX.length)
-    return out
-}
 
 export function clampCurvePrivateKeyInPlace(privateKey: Uint8Array): Uint8Array {
     if (privateKey.length !== 32) {
@@ -59,7 +47,7 @@ export class X25519 {
         assert32(privKey, 'x25519 private key')
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
-            pkcs8FromRawPrivate(privKey),
+            pkcs8FromRawPrivate(X25519_PKCS8_PREFIX, privKey),
             { name: 'X25519' },
             true,
             ['deriveBits']
@@ -77,7 +65,7 @@ export class X25519 {
 
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
-            pkcs8FromRawPrivate(privKey),
+            pkcs8FromRawPrivate(X25519_PKCS8_PREFIX, privKey),
             { name: 'X25519' },
             false,
             ['deriveBits']

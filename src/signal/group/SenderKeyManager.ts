@@ -10,7 +10,7 @@ import {
 } from '@crypto'
 import { proto } from '@proto'
 import { SIGNAL_GROUP_VERSION, SIGNATURE_SIZE } from '@signal/constants'
-import { WaAdvSignature } from '@signal/crypto/WaAdvSignature'
+import { signSignalMessage, verifySignalSignature } from '@signal/crypto/WaAdvSignature'
 import { deriveSenderKeyMsgKey, selectMessageKey } from '@signal/group/SenderKeyChain'
 import { parseDistributionPayload, parseSenderKeyMessage } from '@signal/group/SenderKeyCodec'
 import type { SenderKeyRecord, SignalAddress } from '@signal/types'
@@ -23,6 +23,33 @@ interface GroupSenderKeyCiphertext {
     readonly keyId?: number
     readonly iteration?: number
     readonly ciphertext: Uint8Array
+}
+
+function extractAesCbcParams(seed: Uint8Array): {
+    readonly keyBytes: Uint8Array
+    readonly iv: Uint8Array
+} {
+    if (seed.length < 48) {
+        throw new Error('sender key message seed must be at least 48 bytes')
+    }
+
+    return {
+        iv: seed.subarray(0, 16),
+        keyBytes: seed.subarray(16, 48)
+    }
+}
+
+async function aesCbcEncryptFromSeed(seed: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
+    const { keyBytes, iv } = extractAesCbcParams(seed)
+    return aesCbcEncrypt(await importAesCbcKey(keyBytes), iv, plaintext)
+}
+
+async function aesCbcDecryptFromSeed(
+    seed: Uint8Array,
+    ciphertext: Uint8Array
+): Promise<Uint8Array> {
+    const { keyBytes, iv } = extractAesCbcParams(seed)
+    return aesCbcDecrypt(await importAesCbcKey(keyBytes), iv, ciphertext)
 }
 
 export class SenderKeyManager {
@@ -57,26 +84,6 @@ export class SenderKeyManager {
             axolotlSenderKeyDistributionMessage: payload
         }).finish()
         return distribution
-    }
-
-    public async processSenderKeyDistributionMessage(
-        sender: SignalAddress,
-        data: Uint8Array
-    ): Promise<SenderKeyRecord> {
-        const decoded = proto.Message.SenderKeyDistributionMessage.decode(data)
-        const groupId = decoded.groupId ?? ''
-        if (groupId.length === 0) {
-            throw new Error('sender key distribution missing groupId')
-        }
-        if (!decoded.axolotlSenderKeyDistributionMessage) {
-            throw new Error('sender key distribution missing payload')
-        }
-
-        return this.processSenderKeyDistributionPayload(
-            groupId,
-            sender,
-            decoded.axolotlSenderKeyDistributionMessage
-        )
     }
 
     public async processSenderKeyDistributionPayload(
@@ -119,17 +126,14 @@ export class SenderKeyManager {
         }
 
         const derived = await deriveSenderKeyMsgKey(senderKey.iteration, senderKey.chainKey)
-        const messagePayload = await this.aesCbcEncryptFromSeed(derived.messageKey.seed, plaintext)
+        const messagePayload = await aesCbcEncryptFromSeed(derived.messageKey.seed, plaintext)
         const senderKeyMessage = proto.SenderKeyMessage.encode({
             id: senderKey.keyId,
             iteration: derived.messageKey.iteration,
             ciphertext: messagePayload
         }).finish()
         const versionedContent = prependVersion(senderKeyMessage, SIGNAL_GROUP_VERSION)
-        const signature = await WaAdvSignature.signSignalMessage(
-            senderKey.signingPrivateKey,
-            versionedContent
-        )
+        const signature = await signSignalMessage(senderKey.signingPrivateKey, versionedContent)
         if (signature.length !== SIGNATURE_SIZE) {
             throw new Error(`invalid sender key signature length ${signature.length}`)
         }
@@ -183,7 +187,7 @@ export class SenderKeyManager {
         const signature = parsed.versionContentMac.subarray(
             parsed.versionContentMac.length - SIGNATURE_SIZE
         )
-        const validSignature = await WaAdvSignature.verifySignalSignature(
+        const validSignature = await verifySignalSignature(
             senderKey.signingPublicKey,
             signedContent,
             signature
@@ -193,10 +197,7 @@ export class SenderKeyManager {
         }
 
         const selected = await selectMessageKey(senderKey, parsed.iteration)
-        const plaintext = await this.aesCbcDecryptFromSeed(
-            selected.messageKey.seed,
-            parsed.ciphertext
-        )
+        const plaintext = await aesCbcDecryptFromSeed(selected.messageKey.seed, parsed.ciphertext)
         await this.store.upsertSenderKey(selected.updatedRecord)
         return plaintext
     }
@@ -223,36 +224,5 @@ export class SenderKeyManager {
         }
         await this.store.upsertSenderKey(created)
         return created
-    }
-
-    private async aesCbcEncryptFromSeed(
-        seed: Uint8Array,
-        plaintext: Uint8Array
-    ): Promise<Uint8Array> {
-        const { keyBytes, iv } = this.extractAesCbcParams(seed)
-        const key = await importAesCbcKey(keyBytes)
-        return aesCbcEncrypt(key, iv, plaintext)
-    }
-
-    private async aesCbcDecryptFromSeed(
-        seed: Uint8Array,
-        ciphertext: Uint8Array
-    ): Promise<Uint8Array> {
-        const { keyBytes, iv } = this.extractAesCbcParams(seed)
-        const key = await importAesCbcKey(keyBytes)
-        return aesCbcDecrypt(key, iv, ciphertext)
-    }
-
-    private extractAesCbcParams(seed: Uint8Array): { keyBytes: Uint8Array; iv: Uint8Array } {
-        if (seed.length < 48) {
-            throw new Error('sender key message seed must be at least 48 bytes')
-        }
-
-        const iv = seed.subarray(0, 16)
-        const keyBytes = seed.subarray(16, 48)
-        return {
-            keyBytes,
-            iv
-        }
     }
 }

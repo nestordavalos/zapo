@@ -6,7 +6,12 @@ import type { Logger } from '@infra/log/types'
 import { proto } from '@proto'
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_SIGNALING } from '@protocol/constants'
 import { parsePhoneJid } from '@protocol/jid'
-import { ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE, WaAdvSignature } from '@signal/crypto/WaAdvSignature'
+import {
+    ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE,
+    computeAdvIdentityHmac,
+    generateDeviceSignature,
+    verifyDeviceIdentityAccountSignature
+} from '@signal/crypto/WaAdvSignature'
 import {
     buildCompanionFinishRequestNode,
     buildCompanionHelloRequestNode,
@@ -25,21 +30,6 @@ import type { BinaryNode } from '@transport/types'
 import { decodeProtoBytes } from '@util/base64'
 import { concatBytes, TEXT_DECODER, uint8Equal } from '@util/bytes'
 
-const BROWSER_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
-    chrome: 'Chrome',
-    firefox: 'Firefox',
-    ie: 'IE',
-    opera: 'Opera',
-    safari: 'Safari',
-    edge: 'Edge',
-    chromium: 'Chromium'
-})
-
-function getBrowserDisplayName(browser: string): string {
-    const normalized = browser.trim().toLowerCase()
-    return BROWSER_DISPLAY_NAMES[normalized] ?? browser
-}
-
 interface ActivePairingSession {
     readonly ref?: Uint8Array
     readonly createdAtSeconds: number
@@ -52,19 +42,29 @@ interface ActivePairingSession {
 
 interface WaPairingFlowOptions {
     readonly logger: Logger
-    readonly getCredentials: () => WaAuthCredentials | null
-    readonly updateCredentials: (credentials: WaAuthCredentials) => Promise<void>
-    readonly sendNode: (node: BinaryNode) => Promise<void>
-    readonly query: (node: BinaryNode, timeoutMs: number) => Promise<BinaryNode>
-    readonly setQrRefs: (refs: readonly string[]) => void
-    readonly clearQr: () => void
-    readonly refreshQr: () => void
-    readonly getDeviceBrowser: () => string
-    readonly getDeviceOsDisplayName: () => string
-    readonly getDevicePlatform: () => string
-    readonly emitPairingCode: (code: string) => void
-    readonly emitPairingRefresh: (forceManual: boolean) => void
-    readonly emitPaired: (credentials: WaAuthCredentials) => void
+    readonly auth: {
+        readonly getCredentials: () => WaAuthCredentials | null
+        readonly updateCredentials: (credentials: WaAuthCredentials) => Promise<void>
+    }
+    readonly socket: {
+        readonly sendNode: (node: BinaryNode) => Promise<void>
+        readonly query: (node: BinaryNode, timeoutMs: number) => Promise<BinaryNode>
+    }
+    readonly qrFlow: {
+        readonly setRefs: (refs: readonly string[]) => void
+        readonly clear: () => void
+        readonly refreshCurrentQr: () => boolean
+    }
+    readonly device: {
+        readonly browser: string
+        readonly osDisplayName: string
+        readonly platform: string
+    }
+    readonly callbacks: {
+        readonly emitPairingCode: (code: string) => void
+        readonly emitPairingRefresh: (forceManual: boolean) => void
+        readonly emitPaired: (credentials: WaAuthCredentials) => void
+    }
 }
 
 export class WaPairingFlow {
@@ -96,15 +96,26 @@ export class WaPairingFlow {
         const phoneJid = parsePhoneJid(phoneNumber)
         const companionHello = await createCompanionHello()
         const refreshedCredentials = await this.rotateAdvSecret(credentials)
+        const browser = this.opts.device.browser
+        const browserDisplayName =
+            {
+                chrome: 'Chrome',
+                firefox: 'Firefox',
+                ie: 'IE',
+                opera: 'Opera',
+                safari: 'Safari',
+                edge: 'Edge',
+                chromium: 'Chromium'
+            }[browser.trim().toLowerCase()] ?? browser
 
-        const response = await this.opts.query(
+        const response = await this.opts.socket.query(
             buildCompanionHelloRequestNode({
                 phoneJid,
                 shouldShowPushNotification,
                 wrappedCompanionEphemeralPub: companionHello.wrappedCompanionEphemeralPub,
                 companionServerAuthKeyPub: refreshedCredentials.noiseKeyPair.pubKey,
-                companionPlatformId: this.opts.getDevicePlatform(),
-                companionPlatformDisplay: `${getBrowserDisplayName(this.opts.getDeviceBrowser())} (${this.opts.getDeviceOsDisplayName()})`
+                companionPlatformId: this.opts.device.platform,
+                companionPlatformDisplay: `${browserDisplayName} (${this.opts.device.osDisplayName})`
             }),
             WA_DEFAULTS.IQ_TIMEOUT_MS
         )
@@ -132,7 +143,7 @@ export class WaPairingFlow {
             attempts: 0,
             finished: false
         }
-        this.opts.emitPairingCode(companionHello.pairingCode)
+        this.opts.callbacks.emitPairingCode(companionHello.pairingCode)
         this.opts.logger.info('pairing code emitted', {
             phoneJid,
             createdAtSeconds: this.pairingSession.createdAtSeconds
@@ -142,7 +153,7 @@ export class WaPairingFlow {
 
     public async fetchPairingCountryCodeIso(): Promise<string> {
         this.opts.logger.trace('fetching pairing country code ISO')
-        const response = await this.opts.query(
+        const response = await this.opts.socket.query(
             buildGetCountryCodeRequestNode(),
             WA_DEFAULTS.IQ_TIMEOUT_MS
         )
@@ -186,7 +197,7 @@ export class WaPairingFlow {
             id: node.attrs.id,
             stage: linkCodeNode.attrs.stage
         })
-        await this.opts.sendNode(buildNotificationAckNode(node))
+        await this.opts.socket.sendNode(buildNotificationAckNode(node))
 
         const stage = linkCodeNode.attrs.stage
         if (stage === WA_SIGNALING.LINK_CODE_STAGE_REFRESH_CODE) {
@@ -202,7 +213,9 @@ export class WaPairingFlow {
                 this.opts.logger.info('received pairing refresh notification', {
                     forceManualRefresh: linkCodeNode.attrs.force_manual_refresh === 'true'
                 })
-                this.opts.emitPairingRefresh(linkCodeNode.attrs.force_manual_refresh === 'true')
+                this.opts.callbacks.emitPairingRefresh(
+                    linkCodeNode.attrs.force_manual_refresh === 'true'
+                )
             }
             return true
         }
@@ -215,12 +228,6 @@ export class WaPairingFlow {
     }
 
     public async handleCompanionRegRefreshNotification(node: BinaryNode): Promise<boolean> {
-        if (
-            node.tag !== WA_NODE_TAGS.NOTIFICATION ||
-            node.attrs.type !== WA_SIGNALING.COMPANION_REG_REFRESH_NOTIFICATION
-        ) {
-            return false
-        }
         const hasExpectedChild =
             hasNodeChild(node, WA_SIGNALING.COMPANION_REG_REFRESH_NOTIFICATION) ||
             hasNodeChild(node, 'pair-device-rotate-qr')
@@ -228,12 +235,12 @@ export class WaPairingFlow {
             return false
         }
 
-        await this.opts.sendNode(
+        await this.opts.socket.sendNode(
             buildNotificationAckNode(node, WA_SIGNALING.COMPANION_REG_REFRESH_NOTIFICATION)
         )
         await this.rotateAdvSecret(this.requireCredentials())
         this.opts.logger.info('handled companion_reg_refresh notification')
-        this.opts.refreshQr()
+        this.opts.qrFlow.refreshCurrentQr()
         return true
     }
 
@@ -244,9 +251,9 @@ export class WaPairingFlow {
             )
             .filter((ref) => ref.length > 0)
         await this.rotateAdvSecret(this.requireCredentials())
-        this.opts.setQrRefs(refs)
+        this.opts.qrFlow.setRefs(refs)
         this.opts.logger.info('pair-device refs updated', { refsCount: refs.length })
-        await this.opts.sendNode(buildIqResultNode(iqNode))
+        await this.opts.socket.sendNode(buildIqResultNode(iqNode))
     }
 
     private async handlePairSuccess(
@@ -255,41 +262,6 @@ export class WaPairingFlow {
     ): Promise<void> {
         this.opts.logger.info('processing pair-success node')
         const credentials = this.requireCredentials()
-        const { deviceIdentityNode, deviceNode, platformNode } =
-            this.requirePairSuccessNodes(pairSuccessNode)
-        const wrappedIdentity = proto.ADVSignedDeviceIdentityHMAC.decode(
-            decodeNodeContentUtf8OrBytes(deviceIdentityNode.content, 'pair-success.device-identity')
-        )
-        const { wrappedDetails, isHosted } = await this.verifyWrappedIdentityHmac(
-            credentials,
-            wrappedIdentity
-        )
-        const { signedIdentity, keyIndex, responseIdentityBytes } =
-            await this.buildPairSuccessResponseIdentity(credentials, wrappedDetails, isHosted)
-        const nextCredentials: WaAuthCredentials = {
-            ...credentials,
-            signedIdentity,
-            meJid: deviceNode.attrs.jid,
-            meLid: deviceNode.attrs.lid,
-            platform: platformNode.attrs.name
-        }
-        await this.opts.updateCredentials(nextCredentials)
-        this.opts.logger.info('pair-success credentials updated', {
-            meJid: nextCredentials.meJid,
-            meLid: nextCredentials.meLid,
-            platform: nextCredentials.platform
-        })
-        this.opts.clearQr()
-        await this.sendPairSuccessResult(iqNode, responseIdentityBytes, keyIndex)
-        this.opts.emitPaired(nextCredentials)
-        this.opts.logger.debug('pair-success completed and paired event emitted')
-    }
-
-    private requirePairSuccessNodes(pairSuccessNode: BinaryNode): {
-        readonly deviceIdentityNode: BinaryNode
-        readonly deviceNode: BinaryNode
-        readonly platformNode: BinaryNode
-    } {
         const deviceIdentityNode = findNodeChild(pairSuccessNode, WA_NODE_TAGS.DEVICE_IDENTITY)
         const deviceNode = findNodeChild(pairSuccessNode, 'device')
         const platformNode = findNodeChild(pairSuccessNode, WA_NODE_TAGS.PLATFORM)
@@ -301,16 +273,9 @@ export class WaPairingFlow {
             })
             throw new Error('pair-success stanza is missing required nodes')
         }
-        return { deviceIdentityNode, deviceNode, platformNode }
-    }
-
-    private async verifyWrappedIdentityHmac(
-        credentials: WaAuthCredentials,
-        wrappedIdentity: ReturnType<typeof proto.ADVSignedDeviceIdentityHMAC.decode>
-    ): Promise<{
-        readonly wrappedDetails: Uint8Array
-        readonly isHosted: boolean
-    }> {
+        const wrappedIdentity = proto.ADVSignedDeviceIdentityHMAC.decode(
+            decodeNodeContentUtf8OrBytes(deviceIdentityNode.content, 'pair-success.device-identity')
+        )
         const wrappedDetails = decodeProtoBytes(
             wrappedIdentity.details,
             'ADVSignedDeviceIdentityHMAC.details'
@@ -324,74 +289,29 @@ export class WaPairingFlow {
         const hmacInput = isHosted
             ? concatBytes([ADV_PREFIX_HOSTED_ACCOUNT_SIGNATURE, wrappedDetails])
             : wrappedDetails
-        const expectedHmac = await WaAdvSignature.computeAdvIdentityHmac(
-            credentials.advSecretKey,
-            hmacInput
-        )
+        const expectedHmac = await computeAdvIdentityHmac(credentials.advSecretKey, hmacInput)
         if (!uint8Equal(expectedHmac, wrappedHmac)) {
             this.opts.logger.error('pair-success hmac mismatch')
             throw new Error('pair-success HMAC validation failed')
         }
-        return { wrappedDetails, isHosted }
-    }
 
-    private async buildPairSuccessResponseIdentity(
-        credentials: WaAuthCredentials,
-        wrappedDetails: Uint8Array,
-        isHosted: boolean
-    ): Promise<{
-        readonly signedIdentity: ReturnType<typeof proto.ADVSignedDeviceIdentity.decode>
-        readonly keyIndex: number
-        readonly responseIdentityBytes: Uint8Array
-    }> {
-        const signedIdentity = proto.ADVSignedDeviceIdentity.decode(wrappedDetails)
-        const details = decodeProtoBytes(signedIdentity.details, 'ADVSignedDeviceIdentity.details')
-        const accountSignature = decodeProtoBytes(
-            signedIdentity.accountSignature,
-            'ADVSignedDeviceIdentity.accountSignature'
-        )
-        const accountSignatureKey = decodeProtoBytes(
-            signedIdentity.accountSignatureKey,
-            'ADVSignedDeviceIdentity.accountSignatureKey'
-        )
-        const localIdentity = credentials.registrationInfo.identityKeyPair
-        const validAccountSignature = await WaAdvSignature.verifyDeviceIdentityAccountSignature(
-            details,
-            accountSignature,
-            localIdentity.pubKey,
-            accountSignatureKey,
-            isHosted
-        )
-        if (!validAccountSignature) {
-            this.opts.logger.error('pair-success account signature invalid')
-            throw new Error('pair-success account signature validation failed')
-        }
-
-        signedIdentity.deviceSignature = await WaAdvSignature.generateDeviceSignature(
-            details,
-            localIdentity,
-            accountSignatureKey,
-            isHosted
-        )
-        const advDeviceIdentity = proto.ADVDeviceIdentity.decode(details)
-        const responseIdentityBytes = proto.ADVSignedDeviceIdentity.encode({
-            details: signedIdentity.details,
-            accountSignature: signedIdentity.accountSignature,
-            deviceSignature: signedIdentity.deviceSignature
-        }).finish()
-        return {
+        const { signedIdentity, keyIndex, responseIdentityBytes } =
+            await this.buildPairSuccessResponseIdentity(credentials, wrappedDetails, isHosted)
+        const nextCredentials: WaAuthCredentials = {
+            ...credentials,
             signedIdentity,
-            keyIndex: advDeviceIdentity.keyIndex ?? 0,
-            responseIdentityBytes
+            meJid: deviceNode.attrs.jid,
+            meLid: deviceNode.attrs.lid,
+            platform: platformNode.attrs.name
         }
-    }
-
-    private async sendPairSuccessResult(
-        iqNode: BinaryNode,
-        responseIdentityBytes: Uint8Array,
-        keyIndex: number
-    ): Promise<void> {
-        await this.opts.sendNode({
+        await this.opts.auth.updateCredentials(nextCredentials)
+        this.opts.logger.info('pair-success credentials updated', {
+            meJid: nextCredentials.meJid,
+            meLid: nextCredentials.meLid,
+            platform: nextCredentials.platform
+        })
+        this.opts.qrFlow.clear()
+        await this.opts.socket.sendNode({
             tag: WA_NODE_TAGS.IQ,
             attrs: {
                 ...(iqNode.attrs.id ? { id: iqNode.attrs.id } : {}),
@@ -414,6 +334,59 @@ export class WaPairingFlow {
                 }
             ]
         })
+        this.opts.callbacks.emitPaired(nextCredentials)
+        this.opts.logger.debug('pair-success completed and paired event emitted')
+    }
+
+    private async buildPairSuccessResponseIdentity(
+        credentials: WaAuthCredentials,
+        wrappedDetails: Uint8Array,
+        isHosted: boolean
+    ): Promise<{
+        readonly signedIdentity: ReturnType<typeof proto.ADVSignedDeviceIdentity.decode>
+        readonly keyIndex: number
+        readonly responseIdentityBytes: Uint8Array
+    }> {
+        const signedIdentity = proto.ADVSignedDeviceIdentity.decode(wrappedDetails)
+        const details = decodeProtoBytes(signedIdentity.details, 'ADVSignedDeviceIdentity.details')
+        const accountSignature = decodeProtoBytes(
+            signedIdentity.accountSignature,
+            'ADVSignedDeviceIdentity.accountSignature'
+        )
+        const accountSignatureKey = decodeProtoBytes(
+            signedIdentity.accountSignatureKey,
+            'ADVSignedDeviceIdentity.accountSignatureKey'
+        )
+        const localIdentity = credentials.registrationInfo.identityKeyPair
+        const validAccountSignature = await verifyDeviceIdentityAccountSignature(
+            details,
+            accountSignature,
+            localIdentity.pubKey,
+            accountSignatureKey,
+            isHosted
+        )
+        if (!validAccountSignature) {
+            this.opts.logger.error('pair-success account signature invalid')
+            throw new Error('pair-success account signature validation failed')
+        }
+
+        signedIdentity.deviceSignature = await generateDeviceSignature(
+            details,
+            localIdentity,
+            accountSignatureKey,
+            isHosted
+        )
+        const advDeviceIdentity = proto.ADVDeviceIdentity.decode(details)
+        const responseIdentityBytes = proto.ADVSignedDeviceIdentity.encode({
+            details: signedIdentity.details,
+            accountSignature: signedIdentity.accountSignature,
+            deviceSignature: signedIdentity.deviceSignature
+        }).finish()
+        return {
+            signedIdentity,
+            keyIndex: advDeviceIdentity.keyIndex ?? 0,
+            responseIdentityBytes
+        }
     }
 
     private async handlePrimaryHello(linkCodeNode: BinaryNode): Promise<void> {
@@ -473,12 +446,12 @@ export class WaPairingFlow {
             registrationIdentityKeyPair: credentials.registrationInfo.identityKeyPair
         })
 
-        await this.opts.updateCredentials({
+        await this.opts.auth.updateCredentials({
             ...credentials,
             advSecretKey: finish.advSecret
         })
 
-        const result = await this.opts.query(
+        const result = await this.opts.socket.query(
             buildCompanionFinishRequestNode({
                 phoneJid: pairingSession.phoneJid,
                 wrappedKeyBundle: finish.wrappedKeyBundle,
@@ -499,12 +472,12 @@ export class WaPairingFlow {
             ...credentials,
             advSecretKey: await randomBytesAsync(32)
         }
-        await this.opts.updateCredentials(nextCredentials)
+        await this.opts.auth.updateCredentials(nextCredentials)
         return nextCredentials
     }
 
     private requireCredentials(): WaAuthCredentials {
-        const credentials = this.opts.getCredentials()
+        const credentials = this.opts.auth.getCredentials()
         if (!credentials) {
             throw new Error('credentials are not initialized')
         }

@@ -19,14 +19,6 @@ interface RetryOutboundRow extends Record<string, unknown> {
     readonly expires_at_ms: unknown
 }
 
-interface RetryCounterRow extends Record<string, unknown> {
-    readonly retry_count: unknown
-}
-
-interface CountRow extends Record<string, unknown> {
-    readonly total: unknown
-}
-
 export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore {
     public constructor(options: WaSqliteStorageOptions) {
         super(options, ['retry'])
@@ -163,7 +155,7 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
             [this.options.sessionId, messageId, requesterJid, updatedAtMs, expiresAtMs]
         )
 
-        const row = db.get<RetryCounterRow>(
+        const row = db.get<Record<string, unknown>>(
             `SELECT retry_count
              FROM retry_inbound_counters
              WHERE session_id = ? AND message_id = ? AND requester_jid = ?`,
@@ -176,9 +168,7 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
     }
 
     public async cleanupExpired(nowMs: number): Promise<number> {
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        return this.withTransaction(async (db) => {
             const outboundCount = this.countRows(db, 'retry_outbound_messages', nowMs)
             const inboundCount = this.countRows(db, 'retry_inbound_counters', nowMs)
             db.run(
@@ -191,33 +181,23 @@ export class WaRetrySqliteStore extends BaseSqliteStore implements WaRetryStore 
                  WHERE session_id = ? AND expires_at_ms <= ?`,
                 [this.options.sessionId, nowMs]
             )
-            db.exec('COMMIT')
             return outboundCount + inboundCount
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     public async clear(): Promise<void> {
-        const db = await this.getConnection()
-        db.exec('BEGIN')
-        try {
+        await this.withTransaction((db) => {
             db.run('DELETE FROM retry_outbound_messages WHERE session_id = ?', [
                 this.options.sessionId
             ])
             db.run('DELETE FROM retry_inbound_counters WHERE session_id = ?', [
                 this.options.sessionId
             ])
-            db.exec('COMMIT')
-        } catch (error) {
-            db.exec('ROLLBACK')
-            throw error
-        }
+        })
     }
 
     private countRows(db: WaSqliteConnection, table: string, nowMs: number): number {
-        const row = db.get<CountRow>(
+        const row = db.get<Record<string, unknown>>(
             `SELECT COUNT(*) AS total
              FROM ${table}
              WHERE session_id = ? AND expires_at_ms <= ?`,

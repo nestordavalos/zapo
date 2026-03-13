@@ -41,7 +41,19 @@ export const WA_NODE_TAGS = Object.freeze({
     LINK_CODE_PAIRING_REF: 'link_code_pairing_ref',
     COUNTRY_CODE: 'country_code',
     DEVICE_IDENTITY: 'device-identity',
-    PLATFORM: 'platform'
+    PLATFORM: 'platform',
+    SUBJECT: 'subject',
+    BODY: 'body',
+    PARTICIPANT: 'participant',
+    INVITE: 'invite',
+    LEAVE: 'leave',
+    GROUP: 'group',
+    LOCKED: 'locked',
+    UNLOCKED: 'unlocked',
+    ANNOUNCEMENT: 'announcement',
+    EPHEMERAL: 'ephemeral',
+    MEMBERSHIP_APPROVAL_MODE: 'membership_approval_mode',
+    GROUP_JOIN: 'group_join'
 } as const)
 
 export const WA_IQ_TYPES = Object.freeze({

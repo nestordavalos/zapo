@@ -116,35 +116,6 @@ export async function hmacSign(key: webcrypto.CryptoKey, data: Uint8Array): Prom
 }
 
 // ============================================
-// HKDF variants
-// ============================================
-
-/**
- * HKDF-SHA256 that outputs exactly 64 bytes (two 32-byte keys)
- * Used in Noise protocol for key splitting
- */
-export async function hkdfSplit64(
-    inputKeyMaterial: Uint8Array,
-    salt: Uint8Array = EMPTY_BYTES
-): Promise<readonly [Uint8Array, Uint8Array]> {
-    const key = await webcrypto.subtle.importKey('raw', inputKeyMaterial, 'HKDF', false, [
-        'deriveBits'
-    ])
-    const bits = await webcrypto.subtle.deriveBits(
-        {
-            name: 'HKDF',
-            hash: 'SHA-256',
-            salt,
-            info: EMPTY_BYTES
-        },
-        key,
-        64 * 8
-    )
-    const output = toBytesView(bits)
-    return [output.subarray(0, 32), output.subarray(32, 64)]
-}
-
-// ============================================
 // PBKDF2 → AES-CTR (for pairing code crypto)
 // ============================================
 

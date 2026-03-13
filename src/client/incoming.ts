@@ -1,15 +1,11 @@
 import type {
     WaIncomingBaseEvent,
-    WaIncomingCallEvent,
-    WaIncomingChatstateEvent,
     WaIncomingFailureEvent,
     WaIncomingNotificationEvent,
-    WaIncomingPresenceEvent,
     WaIncomingReceiptEvent,
     WaIncomingUnhandledStanzaEvent
 } from '@client/types'
 import type { Logger } from '@infra/log/types'
-import { WA_MESSAGE_TAGS, WA_NODE_TAGS } from '@protocol/constants'
 import {
     buildInboundReceiptAckNode,
     buildInboundRetryReceiptAckNode
@@ -20,24 +16,28 @@ import { parseOptionalInt } from '@transport/stream/parse'
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
 
-interface IncomingNodeHandlerOptions {
+interface IncomingAckRuntime {
     readonly logger: Logger
     readonly sendNode: (node: BinaryNode) => Promise<void>
+}
+
+type IncomingReceiptHandlerOptions = IncomingAckRuntime & {
     readonly handleIncomingRetryReceipt?: (node: BinaryNode) => Promise<void>
     readonly trackOutboundReceipt?: (node: BinaryNode) => Promise<void>
     readonly emitIncomingReceipt: (event: WaIncomingReceiptEvent) => void
-    readonly emitIncomingPresence: (event: WaIncomingPresenceEvent) => void
-    readonly emitIncomingChatstate: (event: WaIncomingChatstateEvent) => void
-    readonly emitIncomingCall: (event: WaIncomingCallEvent) => void
+}
+
+type IncomingFailureHandlerOptions = {
+    readonly logger: Logger
     readonly emitIncomingFailure: (event: WaIncomingFailureEvent) => void
-    readonly emitIncomingErrorStanza: (event: WaIncomingBaseEvent) => void
-    readonly emitIncomingNotification: (event: WaIncomingNotificationEvent) => void
-    readonly emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) => void
     readonly disconnect: () => Promise<void>
     readonly clearStoredCredentials: () => Promise<void>
 }
 
-type NotificationClassification = WaIncomingNotificationEvent['classification']
+type IncomingNotificationHandlerOptions = IncomingAckRuntime & {
+    readonly emitIncomingNotification: (event: WaIncomingNotificationEvent) => void
+    readonly emitUnhandledStanza: (event: WaIncomingUnhandledStanzaEvent) => void
+}
 
 const LOGOUT_FAILURE_REASONS = new Set<number>([401, 403, 406])
 const DISCONNECT_FAILURE_REASONS = new Set<number>([405, 409, 503])
@@ -68,7 +68,7 @@ const OUT_OF_SCOPE_NOTIFICATION_TYPES = new Set<string>([
     'hosted'
 ])
 
-function buildBaseEvent(node: BinaryNode): WaIncomingBaseEvent {
+export function createIncomingBaseEvent(node: BinaryNode): WaIncomingBaseEvent {
     return {
         rawNode: node,
         id: node.attrs.id,
@@ -95,20 +95,9 @@ async function sendSafeAck(
     }
 }
 
-function createSimpleIncomingHandler(
-    expectedTag: string,
-    handle: (node: BinaryNode) => void | Promise<void>
-): (node: BinaryNode) => Promise<boolean> {
-    return async (node: BinaryNode): Promise<boolean> => {
-        if (node.tag !== expectedTag) {
-            return false
-        }
-        await handle(node)
-        return true
-    }
-}
-
-function classifyNotificationType(notificationType: string): NotificationClassification {
+function classifyNotificationType(
+    notificationType: string
+): WaIncomingNotificationEvent['classification'] {
     if (CORE_NOTIFICATION_TYPES.has(notificationType)) {
         return 'core'
     }
@@ -118,36 +107,40 @@ function classifyNotificationType(notificationType: string): NotificationClassif
     return 'unknown'
 }
 
-function emitIncomingNotificationEvent(
-    options: IncomingNodeHandlerOptions,
-    node: BinaryNode,
-    notificationType: string,
-    classification: NotificationClassification
-): void {
-    const firstChildTag = getFirstNodeChild(node)?.tag
-    options.emitIncomingNotification({
-        ...buildBaseEvent(node),
-        notificationType,
-        classification,
-        details: firstChildTag ? { firstChildTag } : undefined
-    })
+async function applyFailureAction(
+    options: IncomingFailureHandlerOptions,
+    reason: number,
+    clearStoredCredentials: boolean
+): Promise<void> {
+    try {
+        await options.disconnect()
+        if (clearStoredCredentials) {
+            await options.clearStoredCredentials()
+        }
+    } catch (error) {
+        options.logger.warn('failed applying failure stanza action', {
+            reason,
+            clearStoredCredentials,
+            message: toError(error).message
+        })
+    }
 }
 
 export function createIncomingReceiptHandler(
-    options: IncomingNodeHandlerOptions
+    options: IncomingReceiptHandlerOptions
 ): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler(WA_MESSAGE_TAGS.RECEIPT, async (node) => {
+    return async (node: BinaryNode): Promise<boolean> => {
         if (!node.attrs.id || !node.attrs.from) {
             options.logger.warn('incoming receipt missing required attrs for ack', {
                 hasFrom: node.attrs.from !== undefined,
                 hasId: node.attrs.id !== undefined,
                 type: node.attrs.type
             })
-            return
+            return true
         }
 
         options.emitIncomingReceipt({
-            ...buildBaseEvent(node),
+            ...createIncomingBaseEvent(node),
             participant: node.attrs.participant,
             recipient: node.attrs.recipient
         })
@@ -174,111 +167,71 @@ export function createIncomingReceiptHandler(
                     buildInboundRetryReceiptAckNode(node)
                 )
             }
-            return
+            return true
         }
 
         await sendSafeAck(options.logger, options.sendNode, buildInboundReceiptAckNode(node))
-    })
-}
-
-export function createIncomingPresenceHandler(
-    options: IncomingNodeHandlerOptions
-): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler('presence', (node) => {
-        options.emitIncomingPresence(buildBaseEvent(node))
-    })
-}
-
-export function createIncomingChatstateHandler(
-    options: IncomingNodeHandlerOptions
-): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler('chatstate', (node) => {
-        options.emitIncomingChatstate({
-            ...buildBaseEvent(node),
-            participant: node.attrs.participant
-        })
-    })
-}
-
-export function createIncomingCallHandler(
-    options: IncomingNodeHandlerOptions
-): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler('call', (node) => {
-        options.emitIncomingCall(buildBaseEvent(node))
-    })
-}
-
-export function createIncomingErrorStanzaHandler(
-    options: IncomingNodeHandlerOptions
-): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler(WA_NODE_TAGS.ERROR, (node) => {
-        options.emitIncomingErrorStanza(buildBaseEvent(node))
-    })
+        return true
+    }
 }
 
 export function createIncomingFailureHandler(
-    options: IncomingNodeHandlerOptions
+    options: IncomingFailureHandlerOptions
 ): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler('failure', async (node) => {
+    return async (node: BinaryNode): Promise<boolean> => {
         const reason = parseOptionalInt(node.attrs.reason)
         const code = parseOptionalInt(node.attrs.code)
         options.emitIncomingFailure({
-            ...buildBaseEvent(node),
+            ...createIncomingBaseEvent(node),
             reason,
             code,
             message: node.attrs.message,
             url: node.attrs.url
         })
 
-        if (reason !== undefined && LOGOUT_FAILURE_REASONS.has(reason)) {
-            try {
-                await options.disconnect()
-                await options.clearStoredCredentials()
-            } catch (error) {
-                options.logger.warn('failed applying logout flow for failure stanza', {
-                    reason,
-                    message: toError(error).message
-                })
-            }
-            return
+        const shouldClearStoredCredentials =
+            reason !== undefined && LOGOUT_FAILURE_REASONS.has(reason)
+        if (
+            shouldClearStoredCredentials ||
+            (reason !== undefined && DISCONNECT_FAILURE_REASONS.has(reason))
+        ) {
+            await applyFailureAction(options, reason ?? 0, shouldClearStoredCredentials)
         }
 
-        if (reason !== undefined && DISCONNECT_FAILURE_REASONS.has(reason)) {
-            try {
-                await options.disconnect()
-            } catch (error) {
-                options.logger.warn('failed applying disconnect flow for failure stanza', {
-                    reason,
-                    message: toError(error).message
-                })
-            }
-            return
-        }
-    })
+        return true
+    }
 }
 
 export function createIncomingNotificationHandler(
-    options: IncomingNodeHandlerOptions
+    options: IncomingNotificationHandlerOptions
 ): (node: BinaryNode) => Promise<boolean> {
-    return createSimpleIncomingHandler(WA_NODE_TAGS.NOTIFICATION, async (node) => {
+    return async (node: BinaryNode): Promise<boolean> => {
         const notificationType = node.attrs.type ?? ''
         const classification = classifyNotificationType(notificationType)
-        emitIncomingNotificationEvent(options, node, notificationType, classification)
+        const firstChildTag = getFirstNodeChild(node)?.tag
+
+        options.emitIncomingNotification({
+            ...createIncomingBaseEvent(node),
+            notificationType,
+            classification,
+            details: firstChildTag ? { firstChildTag } : undefined
+        })
 
         if (classification === 'out_of_scope') {
             options.emitUnhandledStanza({
-                ...buildBaseEvent(node),
+                ...createIncomingBaseEvent(node),
                 reason: `notification.${notificationType}.out_of_scope`
             })
         } else if (classification === 'unknown') {
             options.emitUnhandledStanza({
-                ...buildBaseEvent(node),
+                ...createIncomingBaseEvent(node),
                 reason: `notification.${notificationType || 'unknown'}.not_supported`
             })
         }
 
         await sendSafeAck(options.logger, options.sendNode, buildNotificationAckNode(node))
-    })
+        return true
+    }
 }
 
 export function createInfoBulletinNotificationEvent(
@@ -287,7 +240,7 @@ export function createInfoBulletinNotificationEvent(
     details?: Readonly<Record<string, unknown>>
 ): WaIncomingNotificationEvent {
     return {
-        ...buildBaseEvent(node),
+        ...createIncomingBaseEvent(node),
         notificationType: `ib.${type}`,
         classification: 'info_bulletin',
         details
@@ -299,7 +252,7 @@ export function createUnhandledIncomingNodeEvent(
     reason = `unhandled.${node.tag}`
 ): WaIncomingUnhandledStanzaEvent {
     return {
-        ...buildBaseEvent(node),
+        ...createIncomingBaseEvent(node),
         reason
     }
 }

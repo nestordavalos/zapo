@@ -13,14 +13,13 @@ export interface WaSqliteStorageOptions {
     readonly pragmas?: Readonly<Record<string, string | number>>
 }
 
-export interface WaCoreStoreSession {
+export interface WaStoreSession {
     readonly auth: WaAuthStore
     readonly signal: WaSignalStore
     readonly senderKey: WaSenderKeyStore
     readonly appState: WaAppStateStore
     readonly retry: WaRetryStore
 }
-export type WaStoreSession = WaCoreStoreSession
 
 export interface WaStore {
     session(sessionId: string): WaStoreSession

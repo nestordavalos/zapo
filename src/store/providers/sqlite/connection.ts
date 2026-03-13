@@ -16,14 +16,12 @@ type SqliteDatabaseLike = {
     readonly query?: (sql: string) => SqliteStatementLike
 }
 
-export type SqliteParams = readonly unknown[]
-
 export interface WaSqliteConnection {
     readonly driver: Exclude<WaSqliteDriver, 'auto'>
     exec(sql: string): void
-    run(sql: string, params?: SqliteParams): void
-    get<T extends Record<string, unknown>>(sql: string, params?: SqliteParams): T | null
-    all<T extends Record<string, unknown>>(sql: string, params?: SqliteParams): readonly T[]
+    run(sql: string, params?: readonly unknown[]): void
+    get<T extends Record<string, unknown>>(sql: string, params?: readonly unknown[]): T | null
+    all<T extends Record<string, unknown>>(sql: string, params?: readonly unknown[]): readonly T[]
     close(): void
 }
 
@@ -36,9 +34,7 @@ const DEFAULT_SQLITE_PRAGMAS: Readonly<Record<string, string | number>> = Object
     busy_timeout: 5000
 })
 
-type SqlitePragmaValueKind = 'int' | 'token' | 'token_or_int'
-
-const ALLOWED_SQLITE_PRAGMAS: Readonly<Record<string, SqlitePragmaValueKind>> = {
+const ALLOWED_SQLITE_PRAGMAS: Readonly<Record<string, 'int' | 'token' | 'token_or_int'>> = {
     auto_vacuum: 'token_or_int',
     busy_timeout: 'int',
     cache_size: 'int',
@@ -54,10 +50,6 @@ const ALLOWED_SQLITE_PRAGMAS: Readonly<Record<string, SqlitePragmaValueKind>> = 
     synchronous: 'token_or_int',
     temp_store: 'token_or_int',
     wal_autocheckpoint: 'int'
-}
-
-async function importModule(moduleName: string): Promise<unknown> {
-    return import(moduleName)
 }
 
 function asConstructor(loaded: unknown): new (path: string) => SqliteDatabaseLike {
@@ -90,16 +82,6 @@ function statementFor(db: SqliteDatabaseLike, sql: string): SqliteStatementLike 
     return statement
 }
 
-function callWithParams(
-    method: (...args: unknown[]) => unknown,
-    params: SqliteParams | undefined
-): unknown {
-    if (!params || params.length === 0) {
-        return method()
-    }
-    return method(...params)
-}
-
 function wrapConnection(
     db: SqliteDatabaseLike,
     driver: Exclude<WaSqliteDriver, 'auto'>
@@ -122,16 +104,23 @@ function wrapConnection(
         },
         run(sql, params) {
             const statement = cachedStatementFor(sql)
-            callWithParams(statement.run.bind(statement), params)
+            if (!params || params.length === 0) {
+                statement.run()
+                return
+            }
+            statement.run(...params)
         },
-        get<T extends Record<string, unknown>>(sql: string, params?: SqliteParams): T | null {
+        get<T extends Record<string, unknown>>(sql: string, params?: readonly unknown[]): T | null {
             const statement = cachedStatementFor(sql)
-            const row = callWithParams(statement.get.bind(statement), params)
+            const row = !params || params.length === 0 ? statement.get() : statement.get(...params)
             return (row as T | undefined) ?? null
         },
-        all<T extends Record<string, unknown>>(sql: string, params?: SqliteParams): readonly T[] {
+        all<T extends Record<string, unknown>>(
+            sql: string,
+            params?: readonly unknown[]
+        ): readonly T[] {
             const statement = cachedStatementFor(sql)
-            const rows = callWithParams(statement.all.bind(statement), params)
+            const rows = !params || params.length === 0 ? statement.all() : statement.all(...params)
             return Array.isArray(rows) ? (rows as readonly T[]) : []
         },
         close() {
@@ -154,15 +143,13 @@ function mergePragmas(
     }
 }
 
-function allowedPragmaList(): string {
-    return Object.keys(ALLOWED_SQLITE_PRAGMAS).sort().join(', ')
-}
+const ALLOWED_SQLITE_PRAGMA_LIST = Object.keys(ALLOWED_SQLITE_PRAGMAS).sort().join(', ')
 
 function normalizePragmaKey(rawKey: string): string {
     const key = rawKey.trim().toLowerCase()
     if (!Object.prototype.hasOwnProperty.call(ALLOWED_SQLITE_PRAGMAS, key)) {
         throw new Error(
-            `unsupported sqlite pragma "${rawKey}". Allowed pragmas: ${allowedPragmaList()}`
+            `unsupported sqlite pragma "${rawKey}". Allowed pragmas: ${ALLOWED_SQLITE_PRAGMA_LIST}`
         )
     }
     return key
@@ -216,7 +203,7 @@ function applyPragmas(db: SqliteDatabaseLike, options: WaSqliteStorageOptions): 
 
 async function openBetterSqlite(options: WaSqliteStorageOptions): Promise<WaSqliteConnection> {
     try {
-        const loaded = await importModule(BETTER_SQLITE3_MODULE)
+        const loaded = await import(BETTER_SQLITE3_MODULE)
         const Database = asConstructor(loaded)
         const db = new Database(options.path)
         applyPragmas(db, options)
@@ -230,7 +217,7 @@ async function openBetterSqlite(options: WaSqliteStorageOptions): Promise<WaSqli
 
 async function openBunSqlite(options: WaSqliteStorageOptions): Promise<WaSqliteConnection> {
     try {
-        const loaded = await importModule(BUN_SQLITE_MODULE)
+        const loaded = await import(BUN_SQLITE_MODULE)
         if (!loaded || typeof loaded !== 'object') {
             throw new Error('invalid bun sqlite module export')
         }
@@ -264,7 +251,10 @@ export async function openSqliteConnection(
         driver,
         pragmas: mergePragmas(options.pragmas)
     }
-    const cacheKey = buildConnectionCacheKey(normalizedOptions, driver)
+    const cacheKey = `${driver}|${options.path}|${Object.entries(normalizedOptions.pragmas ?? {})
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${String(value)}`)
+        .join(';')}`
     const cached = SQLITE_CONNECTION_CACHE.get(cacheKey)
     if (cached) {
         return cached
@@ -278,14 +268,6 @@ export async function openSqliteConnection(
     })
     SQLITE_CONNECTION_CACHE.set(cacheKey, guarded)
     return guarded
-}
-
-function buildConnectionCacheKey(options: WaSqliteStorageOptions, driver: WaSqliteDriver): string {
-    const pragmas = Object.entries(options.pragmas ?? {})
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, value]) => `${key}=${String(value)}`)
-        .join(';')
-    return `${driver}|${options.path}|${pragmas}`
 }
 
 const SQLITE_CONNECTION_CACHE = new Map<string, Promise<WaSqliteConnection>>()

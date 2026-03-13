@@ -2,13 +2,13 @@ import type { WaSendMediaMessage } from '@message/types'
 import type { Proto } from '@proto'
 
 export function isSendMediaMessage(content: unknown): content is WaSendMediaMessage {
-    if (!content || typeof content !== 'object') {
-        return false
-    }
-    if (!('type' in content) || !('media' in content) || !('mimetype' in content)) {
-        return false
-    }
-    return true
+    return (
+        !!content &&
+        typeof content === 'object' &&
+        'type' in content &&
+        'media' in content &&
+        'mimetype' in content
+    )
 }
 
 export function resolveMessageTypeAttr(message: Proto.IMessage): string {

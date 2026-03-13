@@ -8,7 +8,7 @@ import type { WaSignalStore } from '@store/contracts/signal.store'
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
 
-interface WaPassiveTasksRuntimePort {
+type WaPassiveTasksRuntime = {
     readonly queryWithContext: (
         context: string,
         node: BinaryNode,
@@ -23,19 +23,17 @@ interface WaPassiveTasksRuntimePort {
     readonly shouldQueueDanglingReceipt: (node: BinaryNode, error: Error) => boolean
 }
 
-interface WaPassiveTasksCoordinatorOptions {
-    readonly logger: Logger
-    readonly signalStore: WaSignalStore
-    readonly runtime: WaPassiveTasksRuntimePort
-}
-
 export class WaPassiveTasksCoordinator {
     private readonly logger: Logger
     private readonly signalStore: WaSignalStore
-    private readonly runtime: WaPassiveTasksRuntimePort
+    private readonly runtime: WaPassiveTasksRuntime
     private passiveTasksPromise: Promise<void> | null
 
-    public constructor(options: WaPassiveTasksCoordinatorOptions) {
+    public constructor(options: {
+        readonly logger: Logger
+        readonly signalStore: WaSignalStore
+        readonly runtime: WaPassiveTasksRuntime
+    }) {
         this.logger = options.logger
         this.signalStore = options.signalStore
         this.runtime = options.runtime
@@ -93,7 +91,7 @@ export class WaPassiveTasksCoordinator {
 
         const preKeys = await this.signalStore.getOrGenPreKeys(
             SIGNAL_UPLOAD_PREKEYS_COUNT,
-            async (keyId) => generatePreKeyPair(keyId)
+            generatePreKeyPair
         )
         if (preKeys.length === 0) {
             throw new Error('no prekey available for upload')

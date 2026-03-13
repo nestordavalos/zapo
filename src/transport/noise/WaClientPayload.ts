@@ -43,7 +43,44 @@ function defaultWebSubPlatform(): number {
     return proto.ClientPayload.WebInfo.WebSubPlatform.WEB_BROWSER
 }
 
-function defaultUserAgent(versionBase: string): typeof proto.ClientPayload.prototype.userAgent {
+function resolveDevicePropsPlatformType(deviceBrowser?: string): number {
+    const normalized = deviceBrowser?.trim().toLowerCase()
+    switch (normalized) {
+        case 'chrome':
+            return proto.DeviceProps.PlatformType.CHROME
+        case 'firefox':
+            return proto.DeviceProps.PlatformType.FIREFOX
+        case 'ie':
+            return proto.DeviceProps.PlatformType.IE
+        case 'opera':
+            return proto.DeviceProps.PlatformType.OPERA
+        case 'safari':
+            return proto.DeviceProps.PlatformType.SAFARI
+        case 'edge':
+            return proto.DeviceProps.PlatformType.EDGE
+        case 'electron':
+        case 'desktop':
+            return proto.DeviceProps.PlatformType.DESKTOP
+        case 'ipad':
+            return proto.DeviceProps.PlatformType.IPAD
+        case 'tablet':
+        case 'android tablet':
+            return proto.DeviceProps.PlatformType.ANDROID_TABLET
+        case 'ohana':
+            return proto.DeviceProps.PlatformType.OHANA
+        case 'aloha':
+            return proto.DeviceProps.PlatformType.ALOHA
+        case 'catalina':
+            return proto.DeviceProps.PlatformType.CATALINA
+        default:
+            return proto.DeviceProps.PlatformType.UNKNOWN
+    }
+}
+
+function defaultUserAgent(
+    versionBase: string,
+    deviceOsDisplayName?: string
+): typeof proto.ClientPayload.prototype.userAgent {
     const { primary, secondary, tertiary } = parseVersion(versionBase)
     const locale = resolveLocale()
     return {
@@ -56,7 +93,7 @@ function defaultUserAgent(versionBase: string): typeof proto.ClientPayload.proto
         },
         mcc: '000',
         mnc: '000',
-        osVersion: process.platform,
+        osVersion: deviceOsDisplayName ?? process.platform,
         manufacturer: 'wha.ts',
         device: 'Desktop',
         osBuildNumber: process.version,
@@ -66,17 +103,23 @@ function defaultUserAgent(versionBase: string): typeof proto.ClientPayload.proto
     }
 }
 
-function defaultDeviceProps(versionBase: string): Uint8Array {
+function defaultDeviceProps(
+    versionBase: string,
+    config: Pick<
+        WaRegistrationPayloadConfig,
+        'deviceBrowser' | 'deviceOsDisplayName' | 'requireFullSync'
+    >
+): Uint8Array {
     const { primary, secondary, tertiary } = parseVersion(versionBase)
     return proto.DeviceProps.encode({
-        os: process.platform,
+        os: config.deviceOsDisplayName ?? process.platform,
         version: {
             primary,
             secondary,
             tertiary
         },
-        platformType: proto.DeviceProps.PlatformType.DESKTOP,
-        requireFullSync: false,
+        platformType: resolveDevicePropsPlatformType(config.deviceBrowser),
+        requireFullSync: config.requireFullSync === true,
         historySyncConfig: {
             inlineInitialPayloadInE2EeMsg: true,
             supportBotUserAgentChatHistory: true,
@@ -105,7 +148,7 @@ function buildCommonPayload(config: WaPayloadCommonConfig): {
         pull,
         connectType: proto.ClientPayload.ConnectType.WIFI_UNKNOWN,
         connectReason: proto.ClientPayload.ConnectReason.USER_ACTIVATED,
-        userAgent: config.userAgent ?? defaultUserAgent(versionBase),
+        userAgent: config.userAgent ?? defaultUserAgent(versionBase, config.deviceOsDisplayName),
         webInfo:
             config.webInfo ??
             ({
@@ -143,7 +186,7 @@ export function buildRegistrationPayload(config: WaRegistrationPayloadConfig): U
         buildHash: config.buildHash ? toBytesView(config.buildHash) : md5Bytes(versionBase),
         deviceProps: config.deviceProps
             ? toBytesView(config.deviceProps)
-            : defaultDeviceProps(versionBase),
+            : defaultDeviceProps(versionBase, config),
         eRegid: intToBytes(4, registrationId),
         eKeytype: intToBytes(1, KEY_TYPE_CURVE25519),
         eIdent: toBytesView(config.registrationInfo.identityKeyPair.pubKey),

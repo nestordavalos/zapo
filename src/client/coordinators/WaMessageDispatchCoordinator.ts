@@ -142,7 +142,7 @@ export class WaMessageDispatchCoordinator {
         input: WaSignalMessagePublishInput,
         options: WaMessagePublishOptions = {}
     ): Promise<WaMessagePublishResult> {
-        this.assertRegisteredSession('publishSignalMessage')
+        this.requireCurrentMeJid('publishSignalMessage')
         const address = parseSignalAddressFromJid(input.to)
         if (address.server === WA_DEFAULTS.GROUP_SERVER) {
             throw new Error(
@@ -245,21 +245,22 @@ export class WaMessageDispatchCoordinator {
         const nowMs = Date.now()
         const expiresAtMs = nowMs + RETRY_OUTBOUND_TTL_MS
         const hintedMessageId = args.messageIdHint?.trim()
-        const resolvedToJid = this.resolveReplayToJid(args.toJid, args.replayPayload)
+        const resolvedToJid =
+            args.toJid ?? (args.replayPayload.mode === 'opaque_node' ? '' : args.replayPayload.to)
         let hintedPersisted = false
         if (hintedMessageId) {
             hintedPersisted = await this.safeUpsertRetryOutboundRecord(
-                this.createRetryOutboundRecord(
-                    hintedMessageId,
-                    resolvedToJid,
-                    args.participantJid,
-                    args.recipientJid,
-                    args.messageType,
-                    args.replayPayload,
-                    nowMs,
-                    nowMs,
+                this.createRetryOutboundRecord({
+                    messageId: hintedMessageId,
+                    toJid: resolvedToJid,
+                    participantJid: args.participantJid,
+                    recipientJid: args.recipientJid,
+                    messageType: args.messageType,
+                    replayPayload: args.replayPayload,
+                    createdAtMs: nowMs,
+                    updatedAtMs: nowMs,
                     expiresAtMs
-                )
+                })
             )
         }
 
@@ -270,57 +271,44 @@ export class WaMessageDispatchCoordinator {
         }
         const persistedNowMs = Date.now()
         await this.safeUpsertRetryOutboundRecord(
-            this.createRetryOutboundRecord(
-                result.id,
-                resolvedToJid,
-                args.participantJid,
-                args.recipientJid,
-                args.messageType,
-                args.replayPayload,
-                hintedMessageId ? nowMs : persistedNowMs,
-                persistedNowMs,
-                persistedNowMs + RETRY_OUTBOUND_TTL_MS
-            )
+            this.createRetryOutboundRecord({
+                messageId: result.id,
+                toJid: resolvedToJid,
+                participantJid: args.participantJid,
+                recipientJid: args.recipientJid,
+                messageType: args.messageType,
+                replayPayload: args.replayPayload,
+                createdAtMs: hintedMessageId ? nowMs : persistedNowMs,
+                updatedAtMs: persistedNowMs,
+                expiresAtMs: persistedNowMs + RETRY_OUTBOUND_TTL_MS
+            })
         )
         return result
     }
 
-    private resolveReplayToJid(
-        toJid: string | undefined,
-        replayPayload: WaRetryReplayPayload
-    ): string {
-        if (toJid && toJid.length > 0) {
-            return toJid
-        }
-        if (replayPayload.mode === 'opaque_node') {
-            return ''
-        }
-        return replayPayload.to
-    }
-
-    private createRetryOutboundRecord(
-        messageId: string,
-        toJid: string,
-        participantJid: string | undefined,
-        recipientJid: string | undefined,
-        messageType: string,
-        replayPayload: WaRetryReplayPayload,
-        createdAtMs: number,
-        updatedAtMs: number,
-        expiresAtMs: number
-    ): WaRetryOutboundMessageRecord {
+    private createRetryOutboundRecord(input: {
+        readonly messageId: string
+        readonly toJid: string
+        readonly participantJid?: string
+        readonly recipientJid?: string
+        readonly messageType: string
+        readonly replayPayload: WaRetryReplayPayload
+        readonly createdAtMs: number
+        readonly updatedAtMs: number
+        readonly expiresAtMs: number
+    }): WaRetryOutboundMessageRecord {
         return {
-            messageId,
-            toJid,
-            participantJid,
-            recipientJid,
-            messageType,
-            replayMode: replayPayload.mode,
-            replayPayload: encodeRetryReplayPayload(replayPayload),
+            messageId: input.messageId,
+            toJid: input.toJid,
+            participantJid: input.participantJid,
+            recipientJid: input.recipientJid,
+            messageType: input.messageType,
+            replayMode: input.replayPayload.mode,
+            replayPayload: encodeRetryReplayPayload(input.replayPayload),
             state: 'pending',
-            createdAtMs,
-            updatedAtMs,
-            expiresAtMs
+            createdAtMs: input.createdAtMs,
+            updatedAtMs: input.updatedAtMs,
+            expiresAtMs: input.expiresAtMs
         }
     }
 
@@ -416,15 +404,14 @@ export class WaMessageDispatchCoordinator {
             type
         })
 
-        let selfDevicePlaintext: Uint8Array | null = null
-        for (const targetJid of deviceJids) {
-            if (toUserJid(targetJid) !== meUserJid) {
-                continue
-            }
-            const wrapped = wrapDeviceSentMessage(message, recipientUserJid)
-            selfDevicePlaintext = await writeRandomPadMax16(proto.Message.encode(wrapped).finish())
-            break
-        }
+        const hasSelfDeviceFanout = deviceJids.some(
+            (targetJid) => toUserJid(targetJid) === meUserJid
+        )
+        const selfDevicePlaintext = hasSelfDeviceFanout
+            ? await writeRandomPadMax16(
+                  proto.Message.encode(wrapDeviceSentMessage(message, recipientUserJid)).finish()
+              )
+            : null
 
         const participants: {
             readonly jid: string
@@ -559,7 +546,7 @@ export class WaMessageDispatchCoordinator {
         expectedIdentity?: Uint8Array,
         reasonIdentity = false
     ): Promise<void> {
-        this.assertRegisteredSession('ensureSignalSession')
+        this.requireCurrentMeJid('ensureSignalSession')
         if (await this.signalProtocol.hasSession(address)) {
             return
         }
@@ -578,13 +565,6 @@ export class WaMessageDispatchCoordinator {
             regId: fetched.bundle.regId,
             hasOneTimeKey: fetched.bundle.oneTimeKey !== undefined
         })
-    }
-
-    private assertRegisteredSession(context: string): void {
-        if (this.getCurrentMeJid()) {
-            return
-        }
-        throw new Error(`${context} requires registered meJid`)
     }
 
     private requireCurrentMeJid(context: string): string {

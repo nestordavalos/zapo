@@ -23,12 +23,6 @@ export interface WaAppStateStore {
     getSyncKeyData(keyId: Uint8Array): Promise<Uint8Array | null>
     getActiveSyncKey(): Promise<WaAppStateSyncKey | null>
     getCollectionState(collection: AppStateCollectionName): Promise<WaAppStateCollectionStoreState>
-    setCollectionState(
-        collection: AppStateCollectionName,
-        version: number,
-        hash: Uint8Array,
-        indexValueMap: ReadonlyMap<string, Uint8Array>
-    ): Promise<void>
-    setCollectionStates?(updates: readonly WaAppStateCollectionStateUpdate[]): Promise<void>
+    setCollectionStates(updates: readonly WaAppStateCollectionStateUpdate[]): Promise<void>
     clear(): Promise<void>
 }

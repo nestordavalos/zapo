@@ -1,4 +1,3 @@
-import { randomBytesAsync } from '@crypto'
 import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
 import type { BinaryNode } from '@transport/types'
@@ -23,7 +22,6 @@ export class WaNodeOrchestrator {
     private readonly defaultTimeoutMs: number
     private readonly hostDomain: string
     private stanzaPrefix: string | null
-    private stanzaPrefixPromise: Promise<string> | null
     private stanzaCounter: number
     private readonly pendingQueries: Map<string, PendingNodeQuery>
 
@@ -33,7 +31,6 @@ export class WaNodeOrchestrator {
         this.defaultTimeoutMs = options.defaultTimeoutMs ?? WA_DEFAULTS.NODE_QUERY_TIMEOUT_MS
         this.hostDomain = options.hostDomain ?? WA_DEFAULTS.HOST_DOMAIN
         this.stanzaPrefix = null
-        this.stanzaPrefixPromise = null
         this.stanzaCounter = 0
         this.pendingQueries = new Map()
     }
@@ -104,7 +101,7 @@ export class WaNodeOrchestrator {
     }
 
     public async sendNode(node: BinaryNode): Promise<void> {
-        const outbound = await this.withAutoId(node)
+        const outbound = this.withAutoId(node)
         this.logger.trace('sending node', {
             tag: outbound.tag,
             id: outbound.attrs.id,
@@ -114,7 +111,7 @@ export class WaNodeOrchestrator {
     }
 
     public async query(node: BinaryNode, timeoutMs = this.defaultTimeoutMs): Promise<BinaryNode> {
-        const outbound = await this.withAutoId(node)
+        const outbound = this.withAutoId(node)
         const id = outbound.attrs.id
         if (!id) {
             throw new Error('query node id is required')
@@ -154,11 +151,11 @@ export class WaNodeOrchestrator {
         })
     }
 
-    private async withAutoId(node: BinaryNode): Promise<BinaryNode> {
+    private withAutoId(node: BinaryNode): BinaryNode {
         if (node.attrs.id) {
             return node
         }
-        const prefix = await this.getStanzaPrefix()
+        const prefix = this.getStanzaPrefix()
         this.stanzaCounter += 1
         const generatedId = `${prefix}${this.stanzaCounter}`
         this.logger.trace('generated stanza id', { id: generatedId })
@@ -171,29 +168,18 @@ export class WaNodeOrchestrator {
         }
     }
 
-    private async getStanzaPrefix(): Promise<string> {
+    private getStanzaPrefix(): string {
         if (this.stanzaPrefix) {
             return this.stanzaPrefix
         }
-        if (!this.stanzaPrefixPromise) {
-            this.stanzaPrefixPromise = this.generateStanzaPrefix().then((prefix) => {
-                this.stanzaPrefix = prefix
-                return prefix
-            })
-        }
-        try {
-            return await this.stanzaPrefixPromise
-        } finally {
-            if (!this.stanzaPrefix) {
-                this.stanzaPrefixPromise = null
-            }
-        }
+        this.stanzaPrefix = this.generateStanzaPrefix()
+        return this.stanzaPrefix
     }
 
-    private async generateStanzaPrefix(): Promise<string> {
-        const seed = await randomBytesAsync(4)
-        const left = Number(seed[0]) * 256 + Number(seed[1])
-        const right = Number(seed[2]) * 256 + Number(seed[3])
+    private generateStanzaPrefix(): string {
+        const seed = crypto.getRandomValues(new Uint8Array(4))
+        const left = seed[0] * 256 + seed[1]
+        const right = seed[2] * 256 + seed[3]
         const prefix = `${left}.${right}-`
         this.logger.debug('generated stanza prefix', { prefix })
         return prefix

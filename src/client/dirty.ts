@@ -22,8 +22,8 @@ import {
 import { getNodeChildren } from '@transport/node/helpers'
 import { assertIqResult, parseIqError } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
-import { toError } from '@util/primitives'
 import { bytesToHex } from '@util/bytes'
+import { toError } from '@util/primitives'
 
 export interface WaDirtyBit {
     readonly type: string
@@ -43,28 +43,10 @@ interface WaDirtySyncRuntime {
     readonly syncAppState: () => Promise<void>
 }
 
-type DirtyBitHandler = (runtime: WaDirtySyncRuntime, dirtyBit: WaDirtyBit) => Promise<void>
-type AccountSyncHandler = (runtime: WaDirtySyncRuntime) => Promise<void>
 const SUPPORTED_DIRTY_TYPES = new Set<string>(WA_SUPPORTED_DIRTY_TYPES)
 const ACCOUNT_SYNC_PROTOCOL_SET = new Set<string>(WA_ACCOUNT_SYNC_PROTOCOLS)
 
-const DIRTY_BIT_HANDLERS: Readonly<Record<string, DirtyBitHandler>> = {
-    [WA_DIRTY_TYPES.ACCOUNT_SYNC]: async (runtime, dirtyBit) =>
-        handleAccountSyncDirtyBit(runtime, dirtyBit.protocols),
-    [WA_DIRTY_TYPES.SYNCD_APP_STATE]: async (runtime) => handleSyncdAppStateDirtyBit(runtime),
-    [WA_DIRTY_TYPES.GROUPS]: async (runtime) => syncGroupsDirtyBit(runtime),
-    [WA_DIRTY_TYPES.NEWSLETTER_METADATA]: async (runtime) => syncNewsletterMetadataDirtyBit(runtime)
-}
-
-const ACCOUNT_SYNC_HANDLERS: Readonly<Record<string, AccountSyncHandler>> = {
-    [WA_DIRTY_PROTOCOLS.DEVICES]: async (runtime) => syncAccountDevicesDirtyBit(runtime),
-    [WA_DIRTY_PROTOCOLS.PICTURE]: async (runtime) => syncAccountPictureDirtyBit(runtime),
-    [WA_DIRTY_PROTOCOLS.PRIVACY]: async (runtime) => syncAccountPrivacyDirtyBit(runtime),
-    [WA_DIRTY_PROTOCOLS.BLOCKLIST]: async (runtime) => syncAccountBlocklistDirtyBit(runtime),
-    [WA_DIRTY_PROTOCOLS.NOTICE]: async (runtime) => syncAccountNoticeDirtyBit(runtime)
-}
-
-export function parseDirtyBitNode(node: BinaryNode, logger: Logger): WaDirtyBit | null {
+function parseDirtyBitNode(node: BinaryNode, logger: Logger): WaDirtyBit | null {
     const type = node.attrs.type
     const timestamp = Number.parseInt(node.attrs.timestamp ?? '', 10)
     if (!type || !Number.isFinite(timestamp)) {
@@ -82,23 +64,13 @@ export function parseDirtyBitNode(node: BinaryNode, logger: Logger): WaDirtyBit 
     }
 }
 
-export function splitDirtyBitsBySupport(dirtyBits: readonly WaDirtyBit[]): {
+function splitDirtyBitsBySupport(dirtyBits: readonly WaDirtyBit[]): {
     readonly supported: WaDirtyBit[]
     readonly unsupported: WaDirtyBit[]
 } {
-    const supported: WaDirtyBit[] = []
-    const unsupported: WaDirtyBit[] = []
-    for (let index = 0; index < dirtyBits.length; index += 1) {
-        const dirtyBit = dirtyBits[index]
-        if (SUPPORTED_DIRTY_TYPES.has(dirtyBit.type)) {
-            supported.push(dirtyBit)
-        } else {
-            unsupported.push(dirtyBit)
-        }
-    }
     return {
-        supported,
-        unsupported
+        supported: dirtyBits.filter((dirtyBit) => SUPPORTED_DIRTY_TYPES.has(dirtyBit.type)),
+        unsupported: dirtyBits.filter((dirtyBit) => !SUPPORTED_DIRTY_TYPES.has(dirtyBit.type))
     }
 }
 
@@ -114,14 +86,9 @@ export function parseDirtyBits(
     nodes: readonly BinaryNode[],
     logger: Logger
 ): readonly WaDirtyBit[] {
-    const dirtyBits: WaDirtyBit[] = []
-    for (let index = 0; index < nodes.length; index += 1) {
-        const parsedDirtyBit = parseDirtyBitNode(nodes[index], logger)
-        if (parsedDirtyBit) {
-            dirtyBits.push(parsedDirtyBit)
-        }
-    }
-    return dirtyBits
+    return nodes
+        .map((node) => parseDirtyBitNode(node, logger))
+        .filter((dirtyBit): dirtyBit is WaDirtyBit => dirtyBit !== null)
 }
 
 export async function handleDirtyBits(
@@ -142,34 +109,42 @@ export async function handleDirtyBits(
     })
 
     const handledSupported = (
-        await Promise.all(
-            supported.map(async (dirtyBit) => {
-                try {
-                    await handleDirtyBit(runtime, dirtyBit)
-                    return dirtyBit
-                } catch (error) {
-                    runtime.logger.warn('failed handling dirty bit', {
-                        type: dirtyBit.type,
-                        message: toError(error).message
-                    })
-                    return null
-                }
-            })
+        await Promise.allSettled(
+            supported.map(async (dirtyBit) => handleDirtyBit(runtime, dirtyBit))
         )
-    ).filter((entry): entry is WaDirtyBit => entry !== null)
+    ).flatMap((result, index) => {
+        if (result.status === 'fulfilled') {
+            return [supported[index]]
+        }
+        runtime.logger.warn('failed handling dirty bit', {
+            type: supported[index].type,
+            message: toError(result.reason).message
+        })
+        return []
+    })
 
     await clearDirtyBits(runtime, unsupported.concat(handledSupported))
 }
 
 async function handleDirtyBit(runtime: WaDirtySyncRuntime, dirtyBit: WaDirtyBit): Promise<void> {
-    const handler = DIRTY_BIT_HANDLERS[dirtyBit.type]
-    if (!handler) {
-        runtime.logger.debug('received unsupported dirty bit', {
-            type: dirtyBit.type
-        })
-        return
+    switch (dirtyBit.type) {
+        case WA_DIRTY_TYPES.ACCOUNT_SYNC:
+            await handleAccountSyncDirtyBit(runtime, dirtyBit.protocols)
+            return
+        case WA_DIRTY_TYPES.SYNCD_APP_STATE:
+            await handleSyncdAppStateDirtyBit(runtime)
+            return
+        case WA_DIRTY_TYPES.GROUPS:
+            await syncGroupsDirtyBit(runtime)
+            return
+        case WA_DIRTY_TYPES.NEWSLETTER_METADATA:
+            await syncNewsletterMetadataDirtyBit(runtime)
+            return
+        default:
+            runtime.logger.debug('received unsupported dirty bit', {
+                type: dirtyBit.type
+            })
     }
-    await handler(runtime, dirtyBit)
 }
 
 async function handleAccountSyncDirtyBit(
@@ -203,14 +178,27 @@ async function runAccountSyncProtocol(
     runtime: WaDirtySyncRuntime,
     protocol: string
 ): Promise<void> {
-    const handler = ACCOUNT_SYNC_HANDLERS[protocol]
-    if (!handler) {
-        runtime.logger.debug('unsupported account_sync protocol', {
-            protocol
-        })
-        return
+    switch (protocol) {
+        case WA_DIRTY_PROTOCOLS.DEVICES:
+            await syncAccountDevicesDirtyBit(runtime)
+            return
+        case WA_DIRTY_PROTOCOLS.PICTURE:
+            await syncAccountPictureDirtyBit(runtime)
+            return
+        case WA_DIRTY_PROTOCOLS.PRIVACY:
+            await syncAccountPrivacyDirtyBit(runtime)
+            return
+        case WA_DIRTY_PROTOCOLS.BLOCKLIST:
+            await syncAccountBlocklistDirtyBit(runtime)
+            return
+        case WA_DIRTY_PROTOCOLS.NOTICE:
+            await syncAccountNoticeDirtyBit(runtime)
+            return
+        default:
+            runtime.logger.debug('unsupported account_sync protocol', {
+                protocol
+            })
     }
-    await handler(runtime)
 }
 
 async function handleSyncdAppStateDirtyBit(runtime: WaDirtySyncRuntime): Promise<void> {
@@ -241,8 +229,9 @@ async function syncAccountDevicesDirtyBit(runtime: WaDirtySyncRuntime): Promise<
 }
 
 async function syncAccountPictureDirtyBit(runtime: WaDirtySyncRuntime): Promise<void> {
-    const meJid = requireCurrentMeJid(runtime, 'account_sync picture skipped: meJid is missing')
+    const meJid = runtime.getCurrentCredentials()?.meJid ?? null
     if (!meJid) {
+        runtime.logger.warn('account_sync picture skipped: meJid is missing')
         return
     }
     const targetJid = toUserJid(meJid)
@@ -320,17 +309,7 @@ async function syncNewsletterMetadataDirtyBit(runtime: WaDirtySyncRuntime): Prom
 }
 
 async function generateUsyncSid(): Promise<string> {
-    const seed = await randomBytesAsync(8)
-    return bytesToHex(seed)
-}
-
-function requireCurrentMeJid(runtime: WaDirtySyncRuntime, warnMessage: string): string | null {
-    const meJid = runtime.getCurrentCredentials()?.meJid ?? null
-    if (!meJid) {
-        runtime.logger.warn(warnMessage)
-        return null
-    }
-    return meJid
+    return bytesToHex(await randomBytesAsync(8))
 }
 
 function resolveAccountSyncDeviceTargets(credentials: WaAuthCredentials | null): readonly string[] {
@@ -382,7 +361,10 @@ async function clearDirtyBits(
         runtime.logger.info('dirty bits cleared', {
             count: dirtyBits.length
         })
-    } catch {
-        return
+    } catch (error) {
+        runtime.logger.warn('failed to clear dirty bits', {
+            count: dirtyBits.length,
+            message: toError(error).message
+        })
     }
 }

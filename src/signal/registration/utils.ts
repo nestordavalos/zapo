@@ -1,3 +1,8 @@
+import {
+    generatePreKeyPair,
+    generateRegistrationInfo,
+    generateSignedPreKey
+} from '@signal/registration/keygen'
 import type { PreKeyRecord, RegistrationInfo, SignedPreKeyRecord } from '@signal/types'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 
@@ -7,25 +12,10 @@ interface RegistrationBundle {
     readonly firstPreKey: PreKeyRecord
 }
 
-interface RegistrationSignalKeyApi {
-    readonly generateRegistrationInfo: () => Promise<RegistrationInfo>
-    readonly generatePreKeyPair: (keyId: number) => Promise<PreKeyRecord>
-    readonly generateSignedPreKey: (
-        keyId: number,
-        signingPrivateKey: Uint8Array
-    ) => Promise<SignedPreKeyRecord>
-}
-
-export async function createAndStoreInitialKeys(
-    store: WaSignalStore,
-    signalKeyApi: RegistrationSignalKeyApi
-): Promise<RegistrationBundle> {
-    const registrationInfo = await signalKeyApi.generateRegistrationInfo()
-    const signedPreKey = await signalKeyApi.generateSignedPreKey(
-        1,
-        registrationInfo.identityKeyPair.privKey
-    )
-    const firstPreKey = await signalKeyApi.generatePreKeyPair(1)
+export async function createAndStoreInitialKeys(store: WaSignalStore): Promise<RegistrationBundle> {
+    const registrationInfo = await generateRegistrationInfo()
+    const signedPreKey = await generateSignedPreKey(1, registrationInfo.identityKeyPair.privKey)
+    const firstPreKey = await generatePreKeyPair(1)
 
     await store.setRegistrationInfo(registrationInfo)
     await store.setSignedPreKey(signedPreKey)

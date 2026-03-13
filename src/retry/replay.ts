@@ -15,8 +15,8 @@ import { decodeRetryReplayPayload } from '@retry/outbound'
 import type {
     WaRetryEncryptedReplayPayload,
     WaRetryOutboundMessageRecord,
-    WaRetryPlaintextReplayPayload,
-    WaRetryReplayPayload
+    WaRetryOpaqueNodeReplayPayload,
+    WaRetryPlaintextReplayPayload
 } from '@retry/types'
 import type { SignalProtocol } from '@signal/session/SignalProtocol'
 import { decodeBinaryNode } from '@transport/binary'
@@ -36,23 +36,10 @@ export interface WaRetryReplayServiceOptions {
 export type WaRetryResendResult = 'resent' | 'ineligible'
 
 export class WaRetryReplayService {
-    private readonly logger: Logger
-    private readonly messageClient: WaMessageClient
-    private readonly signalProtocol: SignalProtocol
-    private readonly getCurrentMeJid: () => string | null | undefined
-    private readonly getCurrentMeLid: () => string | null | undefined
-    private readonly getCurrentSignedIdentity: () =>
-        | Proto.IADVSignedDeviceIdentity
-        | null
-        | undefined
+    private readonly options: WaRetryReplayServiceOptions
 
     public constructor(options: WaRetryReplayServiceOptions) {
-        this.logger = options.logger
-        this.messageClient = options.messageClient
-        this.signalProtocol = options.signalProtocol
-        this.getCurrentMeJid = options.getCurrentMeJid
-        this.getCurrentMeLid = options.getCurrentMeLid
-        this.getCurrentSignedIdentity = options.getCurrentSignedIdentity
+        this.options = options
     }
 
     public async resendOutboundMessage(
@@ -172,12 +159,9 @@ export class WaRetryReplayService {
 
     private async resendOpaquePayload(
         outbound: WaRetryOutboundMessageRecord,
-        payload: WaRetryReplayPayload,
+        payload: WaRetryOpaqueNodeReplayPayload,
         requesterJid: string
     ): Promise<WaRetryResendResult> {
-        if (payload.mode !== 'opaque_node') {
-            return 'ineligible'
-        }
         const decoded = decodeBinaryNode(payload.node)
         const replayNode =
             decoded.attrs.id === outbound.messageId
@@ -220,15 +204,31 @@ export class WaRetryReplayService {
 
     private isRequesterCurrentAccount(requesterJid: string): boolean {
         const requesterUser = toUserJid(requesterJid)
-        const meJid = this.getCurrentMeJid()
+        const meJid = this.options.getCurrentMeJid()
         if (meJid && toUserJid(meJid) === requesterUser) {
             return true
         }
-        const meLid = this.getCurrentMeLid()
+        const meLid = this.options.getCurrentMeLid()
         if (meLid && toUserJid(meLid) === requesterUser) {
             return true
         }
         return false
+    }
+
+    private get logger(): Logger {
+        return this.options.logger
+    }
+
+    private get messageClient(): WaMessageClient {
+        return this.options.messageClient
+    }
+
+    private get signalProtocol(): SignalProtocol {
+        return this.options.signalProtocol
+    }
+
+    private getCurrentSignedIdentity(): Proto.IADVSignedDeviceIdentity | null | undefined {
+        return this.options.getCurrentSignedIdentity()
     }
 
     private isOpaqueReplayCompatible(node: BinaryNode, requesterJid: string): boolean {
