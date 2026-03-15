@@ -50,5 +50,15 @@ export function toBoolOrUndef(value: unknown): boolean | undefined {
     if (value === null || value === undefined) {
         return undefined
     }
-    return asNumber(value, 'boolean') === 1
+    return Boolean(value)
+}
+
+export function resolvePositive(value: number | undefined, fallback: number, name: string): number {
+    if (value === undefined) {
+        return fallback
+    }
+    if (Number.isSafeInteger(value) && value > 0) {
+        return value
+    }
+    throw new Error(`${name} must be a positive safe integer`)
 }

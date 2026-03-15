@@ -86,6 +86,42 @@ export class SenderKeyManager {
         }
     }
 
+    public async filterParticipantsNeedingDistribution(
+        groupId: string,
+        sender: SignalAddress,
+        participants: readonly SignalAddress[]
+    ): Promise<readonly SignalAddress[]> {
+        if (participants.length === 0) {
+            return []
+        }
+        const senderKey = await this.ensureSenderKey(groupId, sender)
+        const distributed = await this.store.getDeviceSenderKeyDistributions(groupId, participants)
+        return participants.filter((_, index) => {
+            const record = distributed[index]
+            return !record || record.keyId !== senderKey.keyId
+        })
+    }
+
+    public async markSenderKeyDistributed(
+        groupId: string,
+        sender: SignalAddress,
+        participants: readonly SignalAddress[]
+    ): Promise<void> {
+        if (participants.length === 0) {
+            return
+        }
+        const senderKey = await this.ensureSenderKey(groupId, sender)
+        const timestampMs = Date.now()
+        await this.store.upsertSenderKeyDistributions(
+            participants.map((participant) => ({
+                groupId,
+                sender: participant,
+                keyId: senderKey.keyId,
+                timestampMs
+            }))
+        )
+    }
+
     public async processSenderKeyDistributionPayload(
         groupId: string,
         sender: SignalAddress,

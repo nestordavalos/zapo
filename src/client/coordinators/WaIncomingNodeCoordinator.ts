@@ -164,7 +164,9 @@ export class WaIncomingNodeCoordinator {
             const handlers = this.getHandlersForNode(node)
             for (const handler of handlers) {
                 if (await handler(node)) {
-                    this.runtime.tryResolvePendingNode(node)
+                    if (!this.isRetryReceiptType(node.attrs.type)) {
+                        this.runtime.tryResolvePendingNode(node)
+                    }
                     return true
                 }
             }
@@ -191,6 +193,10 @@ export class WaIncomingNodeCoordinator {
             }
         }
         return false
+    }
+
+    private isRetryReceiptType(type: string | undefined): boolean {
+        return type === 'retry' || type === 'enc_rekey_retry'
     }
 
     private getHandlersForNode(node: BinaryNode): readonly WaIncomingNodeHandler[] {

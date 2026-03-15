@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     }
 
     const logger = await createPinoLogger({
-        level: resolveLogLevel('info'),
+        level: resolveLogLevel('trace'),
         pretty: true
     })
 
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     const client_1 = new WaClient(
         {
             store,
-            sessionId: sessionId_1,
+            sessionId: sessionId_2,
             connectTimeoutMs: 15_000,
             deviceBrowser: 'Chrome',
             deviceOsDisplayName: 'Windows',
@@ -81,20 +81,8 @@ async function main(): Promise<void> {
         logger
     )
 
-    const client_2 = new WaClient(
-        {
-            store,
-            sessionId: sessionId_2,
-            connectTimeoutMs: 15_000,
-            deviceBrowser: 'Chrome',
-            deviceOsDisplayName: 'Windows',
-            nodeQueryTimeoutMs: 30_000
-        },
-        logger
-    )
-
     await startSession(client_1)
-    await startSession(client_2)
+    //await startSession(client_2)
 
     const autoExitMs = Number(process.env.EXAMPLE_EXIT_MS ?? '0')
     if (Number.isFinite(autoExitMs) && autoExitMs > 0) {

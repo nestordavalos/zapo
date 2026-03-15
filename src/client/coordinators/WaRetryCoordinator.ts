@@ -1,14 +1,19 @@
 import type { Logger } from '@infra/log/types'
 import type { WaMessageClient } from '@message/WaMessageClient'
 import { proto, type Proto } from '@proto'
-import { WA_DEFAULTS, WA_MESSAGE_TAGS } from '@protocol/constants'
+import { WA_MESSAGE_TAGS } from '@protocol/constants'
 import {
     isGroupOrBroadcastJid,
     normalizeDeviceJid,
     parseSignalAddressFromJid,
     toUserJid
 } from '@protocol/jid'
-import { MAX_RETRY_ATTEMPTS, RETRY_KEYS_MIN_COUNT, RETRY_OUTBOUND_TTL_MS } from '@retry/constants'
+import {
+    MAX_RETRY_ATTEMPTS,
+    RETRY_KEYS_MIN_COUNT,
+    RETRY_OUTBOUND_TTL_MS,
+    RETRY_REASON
+} from '@retry/constants'
 import { pickRetryStateMax } from '@retry/outbound'
 import { parseRetryReceiptRequest } from '@retry/parse'
 import { mapRetryReasonFromError } from '@retry/reason'
@@ -26,6 +31,7 @@ import { generatePreKeyPair } from '@signal/registration/keygen'
 import type { SignalProtocol } from '@signal/session/SignalProtocol'
 import type { SignalPreKeyBundle } from '@signal/types'
 import type { WaRetryStore } from '@store/contracts/retry.store'
+import type { WaSenderKeyStore } from '@store/contracts/sender-key.store'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 import { buildInboundRetryReceiptAckNode } from '@transport/node/builders/message'
 import { buildRetryReceiptNode } from '@transport/node/builders/retry'
@@ -36,12 +42,12 @@ interface WaRetryCoordinatorOptions {
     readonly logger: Logger
     readonly retryStore: WaRetryStore
     readonly signalStore: WaSignalStore
+    readonly senderKeyStore: WaSenderKeyStore
     readonly signalProtocol: SignalProtocol
     readonly signalDeviceSync: SignalDeviceSyncApi
     readonly signalMissingPreKeysSync: SignalMissingPreKeysSyncApi
     readonly messageClient: WaMessageClient
     readonly sendNode: (node: BinaryNode) => Promise<void>
-    readonly tryResolvePendingNode?: (node: BinaryNode) => boolean
     readonly getCurrentMeJid: () => string | null | undefined
     readonly getCurrentMeLid: () => string | null | undefined
     readonly getCurrentSignedIdentity: () => Proto.IADVSignedDeviceIdentity | null | undefined
@@ -64,17 +70,37 @@ interface RetryResendPreparation {
     readonly outbound: WaRetryOutboundMessageRecord
 }
 
+function getRetryReasonName(code: number | undefined): string | undefined {
+    if (code === undefined) {
+        return undefined
+    }
+    const entry = Object.entries(RETRY_REASON).find(([, value]) => value === code)
+    return entry ? entry[0] : 'unknown'
+}
+
+function getRemoteRetryReasonLogFields(reason: number | undefined): {
+    readonly hasRemoteRetryReason: boolean
+    readonly remoteRetryReason: number | null
+    readonly remoteRetryReasonName: string
+} {
+    return {
+        hasRemoteRetryReason: reason !== undefined,
+        remoteRetryReason: reason ?? null,
+        remoteRetryReasonName: getRetryReasonName(reason) ?? 'missing_in_retry_receipt'
+    }
+}
+
 export class WaRetryCoordinator {
     private readonly logger: Logger
     private readonly retryStore: WaRetryStore
     private readonly retryTtlMs: number
     private readonly signalStore: WaSignalStore
+    private readonly senderKeyStore: WaSenderKeyStore
     private readonly signalProtocol: SignalProtocol
     private readonly signalDeviceSync: SignalDeviceSyncApi
     private readonly signalMissingPreKeysSync: SignalMissingPreKeysSyncApi
     private readonly retryReplayService: WaRetryReplayService
     private readonly sendNode: (node: BinaryNode) => Promise<void>
-    private readonly tryResolvePendingNode?: (node: BinaryNode) => boolean
     private readonly getCurrentMeJid: () => string | null | undefined
     private readonly getCurrentMeLid: () => string | null | undefined
     private readonly getCurrentSignedIdentity: () =>
@@ -88,11 +114,11 @@ export class WaRetryCoordinator {
         this.retryStore = options.retryStore
         this.retryTtlMs = this.retryStore.getTtlMs?.() ?? RETRY_OUTBOUND_TTL_MS
         this.signalStore = options.signalStore
+        this.senderKeyStore = options.senderKeyStore
         this.signalProtocol = options.signalProtocol
         this.signalDeviceSync = options.signalDeviceSync
         this.signalMissingPreKeysSync = options.signalMissingPreKeysSync
         this.sendNode = options.sendNode
-        this.tryResolvePendingNode = options.tryResolvePendingNode
         this.getCurrentMeJid = options.getCurrentMeJid
         this.getCurrentMeLid = options.getCurrentMeLid
         this.getCurrentSignedIdentity = options.getCurrentSignedIdentity
@@ -230,14 +256,14 @@ export class WaRetryCoordinator {
         receiptNode: BinaryNode,
         request: WaParsedRetryRequest
     ): Promise<void> {
-        this.tryResolvePendingNode?.(receiptNode)
-
         if (request.type === 'enc_rekey_retry') {
             this.logger.info('received enc_rekey_retry request (voip path deferred)', {
                 id: request.stanzaId,
                 originalMsgId: request.originalMsgId,
                 from: request.from,
-                participant: request.participant
+                participant: request.participant,
+                remoteRetryCount: request.retryCount,
+                ...getRemoteRetryReasonLogFields(request.retryReason)
             })
             return
         }
@@ -272,7 +298,8 @@ export class WaRetryCoordinator {
             originalMsgId: request.originalMsgId,
             requester: prepared.requesterJid,
             mode: prepared.outbound.replayMode,
-            remoteRetryCount: request.retryCount
+            remoteRetryCount: request.retryCount,
+            ...getRemoteRetryReasonLogFields(request.retryReason)
         })
     }
 
@@ -293,7 +320,8 @@ export class WaRetryCoordinator {
                 id: request.stanzaId,
                 originalMsgId: request.originalMsgId,
                 requester: requesterJid,
-                remoteRetryCount: request.retryCount
+                remoteRetryCount: request.retryCount,
+                ...getRemoteRetryReasonLogFields(request.retryReason)
             })
             return null
         }
@@ -313,7 +341,9 @@ export class WaRetryCoordinator {
             this.logger.info('retry request rejected: missing compatible session', {
                 id: request.stanzaId,
                 originalMsgId: request.originalMsgId,
-                requester: requesterJid
+                requester: requesterJid,
+                remoteRetryCount: request.retryCount,
+                ...getRemoteRetryReasonLogFields(request.retryReason)
             })
             return null
         }
@@ -325,7 +355,8 @@ export class WaRetryCoordinator {
                 originalMsgId: request.originalMsgId,
                 requester: requesterJid,
                 reason: authorization.reason,
-                remoteRetryCount: request.retryCount
+                remoteRetryCount: request.retryCount,
+                ...getRemoteRetryReasonLogFields(request.retryReason)
             })
             return null
         }
@@ -426,6 +457,8 @@ export class WaRetryCoordinator {
         request: WaParsedRetryRequest,
         requesterJid: string
     ): Promise<boolean> {
+        await this.markRetryRequesterSenderKeyAsStale(request, requesterJid)
+
         const address = parseSignalAddressFromJid(requesterJid)
         const currentSession = await this.signalStore.getSession(address)
         if (currentSession && request.regId > 0 && currentSession.remote.regId !== request.regId) {
@@ -462,6 +495,32 @@ export class WaRetryCoordinator {
         }
         await this.signalProtocol.establishOutgoingSession(address, fetched)
         return true
+    }
+
+    private async markRetryRequesterSenderKeyAsStale(
+        request: WaParsedRetryRequest,
+        requesterJid: string
+    ): Promise<void> {
+        if (!isGroupOrBroadcastJid(request.from)) {
+            return
+        }
+        try {
+            const requesterAddress = parseSignalAddressFromJid(requesterJid)
+            const deleted = await this.senderKeyStore.markForgetSenderKey(request.from, [
+                requesterAddress
+            ])
+            this.logger.debug('marked sender key as stale for group retry requester', {
+                groupJid: request.from,
+                requester: requesterJid,
+                deleted
+            })
+        } catch (error) {
+            this.logger.warn('failed to mark sender key as stale for group retry requester', {
+                groupJid: request.from,
+                requester: requesterJid,
+                message: toError(error).message
+            })
+        }
     }
 
     private async fetchMissingPreKeysSession(
@@ -516,16 +575,12 @@ export class WaRetryCoordinator {
         outbound: WaRetryOutboundMessageRecord,
         requesterJid: string
     ): Promise<RetryAuthorization> {
-        if (
-            outbound.state === 'delivered' ||
-            outbound.state === 'read' ||
-            outbound.state === 'played' ||
-            outbound.state === 'ineligible'
-        ) {
+        if (outbound.state === 'ineligible') {
             return { authorized: false, reason: `state_${outbound.state}` }
         }
-        if (!this.matchesRetryTarget(request, outbound, requesterJid)) {
-            return { authorized: false, reason: 'chat_target_mismatch' }
+        const isGroupOutbound = isGroupOrBroadcastJid(outbound.toJid)
+        if (!isGroupOutbound && (outbound.state === 'read' || outbound.state === 'played')) {
+            return { authorized: false, reason: `state_${outbound.state}` }
         }
         const requesterAuthorized = await this.isRequesterAuthorizedDevice(requesterJid)
         if (!requesterAuthorized) {
@@ -551,7 +606,7 @@ export class WaRetryCoordinator {
             })
             return false
         }
-        if (isGroupOrBroadcastJid(outboundTo, WA_DEFAULTS.GROUP_SERVER)) {
+        if (isGroupOrBroadcastJid(outboundTo)) {
             return request.from === outboundTo
         }
         try {

@@ -248,7 +248,6 @@ export class WaComms {
         if (!this.noiseSession) {
             throw new Error('noise session not ready')
         }
-        this.logger.trace('comms sendFrame', { byteLength: payload.byteLength })
         const wire = await this.noiseSession.encryptFrame(payload)
         await this.socket.send(wire)
     }
@@ -339,7 +338,6 @@ export class WaComms {
     }
 
     private onSocketMessage(payload: Uint8Array): void {
-        this.logger.trace('comms socket payload received', { byteLength: payload.byteLength })
         this.frameProcessingQueue = this.frameProcessingQueue
             .catch(() => undefined)
             .then(async () => this.processSocketPayload(payload))

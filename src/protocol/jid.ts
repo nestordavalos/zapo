@@ -17,7 +17,7 @@ export function splitJid(jid: string): ParsedJid {
     }
 }
 
-export function normalizeRecipientJid(to: string, userServer: string, groupServer: string): string {
+export function normalizeRecipientJid(to: string): string {
     const input = to.trim()
     if (input.length === 0) {
         throw new Error('recipient cannot be empty')
@@ -27,22 +27,30 @@ export function normalizeRecipientJid(to: string, userServer: string, groupServe
     }
 
     if (input.includes('-')) {
-        return `${input}@${groupServer}`
+        return `${input}@${WA_DEFAULTS.GROUP_SERVER}`
     }
 
     const digits = input.replace(/\D/g, '')
     if (digits.length === 0) {
         throw new Error(`invalid recipient: ${to}`)
     }
-    return `${digits}@${userServer}`
+    return `${digits}@${WA_DEFAULTS.HOST_DOMAIN}`
 }
 
-export function isGroupJid(jid: string, groupServer: string): boolean {
-    return jid.endsWith(`@${groupServer}`)
+export function isJidType(jid: string, type: string): boolean {
+    return jid.endsWith(`@${type}`)
 }
 
-export function isGroupOrBroadcastJid(jid: string, groupServer: string): boolean {
-    return isGroupJid(jid, groupServer) || jid.endsWith('@broadcast')
+export function isGroupJid(jid: string): boolean {
+    return isJidType(jid, WA_DEFAULTS.GROUP_SERVER)
+}
+
+export function isBroadcastJid(jid: string): boolean {
+    return isJidType(jid, WA_DEFAULTS.BROADCAST_SERVER)
+}
+
+export function isGroupOrBroadcastJid(jid: string): boolean {
+    return isGroupJid(jid) || isBroadcastJid(jid)
 }
 
 export function parseSignalAddressFromJid(jid: string): SignalAddress {

@@ -61,6 +61,28 @@ export interface WaStoreCacheTtlSelection {
     readonly deviceListMs?: number
 }
 
+export interface WaStoreSqliteBatchSizeSelection {
+    readonly deviceList?: number
+    readonly senderKeyDistribution?: number
+    readonly signalPreKey?: number
+    readonly signalHasSession?: number
+}
+
+export interface WaStoreMemoryLimitSelection {
+    readonly appStateSyncKeys?: number
+    readonly appStateCollectionEntries?: number
+    readonly signalPreKeys?: number
+    readonly signalSessions?: number
+    readonly signalRemoteIdentities?: number
+    readonly senderKeys?: number
+    readonly senderDistributions?: number
+    readonly participantsGroups?: number
+    readonly deviceListUsers?: number
+    readonly messages?: number
+    readonly threads?: number
+    readonly contacts?: number
+}
+
 export type WaStoreDomainValueOrFactory<T> = T | ((sessionId: string) => T)
 
 export interface WaCreateStoreCustomProviders {
@@ -80,7 +102,12 @@ export interface WaCreateStoreCustomCacheProviders {
 }
 
 export interface WaCreateStoreOptions {
-    readonly sqlite?: Omit<WaSqliteStorageOptions, 'sessionId'>
+    readonly sqlite?: Omit<WaSqliteStorageOptions, 'sessionId'> & {
+        readonly batchSizes?: WaStoreSqliteBatchSizeSelection
+    }
+    readonly memory?: {
+        readonly limits?: WaStoreMemoryLimitSelection
+    }
     readonly providers?: WaStoreProviderSelection
     readonly cacheProviders?: WaStoreCacheProviderSelection
     readonly cacheTtlMs?: WaStoreCacheTtlSelection

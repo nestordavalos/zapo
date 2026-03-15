@@ -102,11 +102,6 @@ export class WaNodeOrchestrator {
 
     public async sendNode(node: BinaryNode): Promise<void> {
         const outbound = this.withAutoId(node)
-        this.logger.trace('sending node', {
-            tag: outbound.tag,
-            id: outbound.attrs.id,
-            type: outbound.attrs.type
-        })
         await this.sendNodeFn(outbound)
     }
 

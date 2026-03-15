@@ -6,12 +6,14 @@ import {
     isRetryableNegativeAck
 } from '@message/ack'
 import type {
+    WaMessageAckMetadata,
     WaEncryptedMessageInput,
     WaMessagePublishOptions,
     WaMessagePublishResult,
     WaSendReceiptInput
 } from '@message/types'
 import { WA_DEFAULTS, WA_MESSAGE_TAGS, WA_MESSAGE_TYPES, WA_NODE_TAGS } from '@protocol/constants'
+import { parseOptionalInt } from '@transport/stream/parse'
 import type { BinaryNode } from '@transport/types'
 import { delay } from '@util/async'
 import { toError } from '@util/primitives'
@@ -95,12 +97,15 @@ export class WaMessageClient {
                     id,
                     tag: ackNode.tag,
                     type: ackNode.attrs.type,
+                    phash: ackNode.attrs.phash,
+                    addressingMode: ackNode.attrs.addressing_mode,
                     attempts: attempt
                 })
                 return {
                     id,
                     attempts: attempt,
-                    ackNode
+                    ackNode,
+                    ack: this.extractAckMetadata(ackNode)
                 }
             } catch (error) {
                 lastError = toError(error)
@@ -130,6 +135,33 @@ export class WaMessageClient {
         input: WaEncryptedMessageInput,
         options: WaMessagePublishOptions = {}
     ): Promise<WaMessagePublishResult> {
+        const node = this.buildEncryptedMessageNode(input)
+        return this.publishNode(node, options)
+    }
+
+    public async sendMessageNode(node: BinaryNode): Promise<void> {
+        if (node.tag !== WA_MESSAGE_TAGS.MESSAGE) {
+            throw new Error(`invalid node tag for message send: ${node.tag}`)
+        }
+        this.logger.debug('message sent without waiting for ack', {
+            to: node.attrs.to,
+            type: node.attrs.type,
+            id: node.attrs.id
+        })
+        await this.sendNode(node)
+    }
+
+    public async sendEncrypted(input: WaEncryptedMessageInput): Promise<void> {
+        const node = this.buildEncryptedMessageNode(input)
+        this.logger.debug('encrypted message sent without waiting for ack', {
+            to: node.attrs.to,
+            type: node.attrs.type,
+            id: node.attrs.id
+        })
+        await this.sendNode(node)
+    }
+
+    private buildEncryptedMessageNode(input: WaEncryptedMessageInput): BinaryNode {
         const attrs: Record<string, string> = {
             to: input.to,
             type: input.type ?? 'text'
@@ -139,6 +171,9 @@ export class WaMessageClient {
         }
         if (input.participant) {
             attrs.participant = input.participant
+        }
+        if (input.addressingMode) {
+            attrs.addressing_mode = input.addressingMode
         }
         if (input.deviceFanout) {
             attrs.device_fanout = input.deviceFanout
@@ -169,7 +204,7 @@ export class WaMessageClient {
             attrs,
             content
         }
-        return this.publishNode(node, options)
+        return node
     }
 
     public async sendReceipt(input: WaSendReceiptInput): Promise<void> {
@@ -206,5 +241,22 @@ export class WaMessageClient {
             message.includes('connection') ||
             message.includes('closed')
         )
+    }
+
+    private extractAckMetadata(ackNode: BinaryNode): WaMessageAckMetadata {
+        const addressingModeRaw = ackNode.attrs.addressing_mode
+        const addressingMode =
+            addressingModeRaw === 'pn' || addressingModeRaw === 'lid'
+                ? addressingModeRaw
+                : undefined
+        return {
+            t: ackNode.attrs.t,
+            sync: ackNode.attrs.sync,
+            phash: ackNode.attrs.phash,
+            refreshLid: ackNode.attrs.refresh_lid === 'true',
+            addressingMode,
+            count: parseOptionalInt(ackNode.attrs.count),
+            error: parseOptionalInt(ackNode.attrs.error)
+        }
     }
 }

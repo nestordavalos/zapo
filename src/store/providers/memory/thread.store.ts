@@ -1,19 +1,24 @@
 import type { WaStoredThreadRecord, WaThreadStore as Contract } from '@store/contracts/thread.store'
+import { resolvePositive } from '@util/coercion'
 import { normalizeQueryLimit, setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 
 const DEFAULT_THREAD_MEMORY_STORE_LIMITS = Object.freeze({
     threads: 10_000
 } as const)
 
+export interface WaThreadMemoryStoreOptions {
+    readonly maxThreads?: number
+}
+
 export class WaThreadMemoryStore implements Contract {
     private readonly threads = new Map<string, WaStoredThreadRecord>()
     private readonly maxThreads: number
 
-    public constructor() {
-        this.maxThreads = readPositiveLimit(
-            'WA_THREADS_MEMORY_STORE_MAX_THREADS',
-            DEFAULT_THREAD_MEMORY_STORE_LIMITS.threads
+    public constructor(options: WaThreadMemoryStoreOptions = {}) {
+        this.maxThreads = resolvePositive(
+            options.maxThreads,
+            DEFAULT_THREAD_MEMORY_STORE_LIMITS.threads,
+            'WaThreadMemoryStoreOptions.maxThreads'
         )
     }
 

@@ -76,13 +76,11 @@ export class SignalIdentitySyncApi {
         const entries = this.parseIdentitySyncResponse(response, normalizedTargets)
         const { signalStore } = this
         if (signalStore && entries.length > 0) {
-            await Promise.all(
-                entries.map((entry) =>
-                    signalStore.setRemoteIdentity(
-                        parseSignalAddressFromJid(entry.jid),
-                        toSerializedPubKey(entry.identity)
-                    )
-                )
+            await signalStore.setRemoteIdentities(
+                entries.map((entry) => ({
+                    address: parseSignalAddressFromJid(entry.jid),
+                    identityKey: toSerializedPubKey(entry.identity)
+                }))
             )
         }
         this.logger.debug('signal identity sync success', {

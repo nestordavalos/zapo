@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { ConsoleLogger } from '@infra/log/ConsoleLogger'
 import type { Logger } from '@infra/log/types'
 import { decodeBinaryNodeStanza, encodeBinaryNodeStanza } from '@transport/binary'
+import { formatBinaryNodeAsXml } from '@transport/node/xml'
 import type { BinaryNode } from '@transport/types'
 import type { WaComms } from '@transport/WaComms'
 import { toError } from '@util/primitives'
@@ -45,12 +46,12 @@ export class WaNodeTransport extends EventEmitter {
         this.logger.trace('node transport send node', {
             tag: node.tag,
             id: node.attrs.id,
-            type: node.attrs.type
+            type: node.attrs.type,
+            xml: this.shouldIncludeTraceXml() ? formatBinaryNodeAsXml(node) : undefined
         })
         const frame = encodeBinaryNodeStanza(node)
         this.emit('node_out', node, frame)
         this.emit('frame_out', frame)
-        this.logger.trace('node transport frame out', { byteLength: frame.byteLength })
         await comms.sendFrame(frame)
     }
 
@@ -59,7 +60,6 @@ export class WaNodeTransport extends EventEmitter {
         onNode: (node: BinaryNode) => Promise<void> | void
     ): Promise<void> {
         this.emit('frame_in', frame)
-        this.logger.trace('node transport frame in', { byteLength: frame.byteLength })
         let node: BinaryNode
         try {
             node = await decodeBinaryNodeStanza(frame)
@@ -78,8 +78,13 @@ export class WaNodeTransport extends EventEmitter {
         this.logger.trace('node transport node in', {
             tag: node.tag,
             id: node.attrs.id,
-            type: node.attrs.type
+            type: node.attrs.type,
+            xml: this.shouldIncludeTraceXml() ? formatBinaryNodeAsXml(node) : undefined
         })
         await onNode(node)
+    }
+
+    private shouldIncludeTraceXml(): boolean {
+        return this.logger.level === 'trace'
     }
 }

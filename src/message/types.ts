@@ -8,10 +8,21 @@ export interface WaMessagePublishOptions {
     readonly retryDelayMs?: number
 }
 
+export interface WaMessageAckMetadata {
+    readonly t?: string
+    readonly sync?: string
+    readonly phash?: string
+    readonly refreshLid: boolean
+    readonly addressingMode?: 'pn' | 'lid'
+    readonly count?: number
+    readonly error?: number
+}
+
 export interface WaMessagePublishResult {
     readonly id: string
     readonly attempts: number
     readonly ackNode: BinaryNode
+    readonly ack: WaMessageAckMetadata
 }
 
 export interface WaSendMediaMessage {
@@ -34,6 +45,7 @@ export interface WaEncryptedMessageInput {
     readonly encType: 'msg' | 'pkmsg' | 'skmsg'
     readonly ciphertext: Uint8Array
     readonly deviceIdentity?: Uint8Array
+    readonly addressingMode?: 'pn' | 'lid'
     readonly encCount?: number
     readonly id?: string
     readonly type?: string

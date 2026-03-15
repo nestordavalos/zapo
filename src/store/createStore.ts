@@ -1,11 +1,10 @@
-import type { WaContactStore, WaStoredContactRecord } from '@store/contracts/contact.store'
-import type { WaDeviceListSnapshot, WaDeviceListStore } from '@store/contracts/device-list.store'
-import type { WaMessageStore, WaStoredMessageRecord } from '@store/contracts/message.store'
-import type {
-    WaParticipantsSnapshot,
-    WaParticipantsStore
-} from '@store/contracts/participants.store'
-import type { WaStoredThreadRecord, WaThreadStore } from '@store/contracts/thread.store'
+import {
+    NOOP_CONTACT_STORE,
+    NOOP_DEVICE_LIST_STORE,
+    NOOP_MESSAGE_STORE,
+    NOOP_PARTICIPANTS_STORE,
+    NOOP_THREAD_STORE
+} from '@store/noop.store'
 import { WaAppStateMemoryStore } from '@store/providers/memory/appstate.store'
 import { WaContactMemoryStore } from '@store/providers/memory/contact.store'
 import { WaDeviceListMemoryStore } from '@store/providers/memory/device-list.store'
@@ -31,73 +30,16 @@ import type {
     WaStoreCacheProviderSelection,
     WaStoreCacheTtlSelection,
     WaStoreDomainValueOrFactory,
+    WaStoreMemoryLimitSelection,
     WaStoreProviderSelection,
+    WaStoreSqliteBatchSizeSelection,
     WaStoreSession
 } from '@store/types'
-
-const EMPTY_STORE_LIST = Object.freeze([]) as readonly unknown[]
-const DEFAULT_RETRY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const DEFAULT_PARTICIPANTS_CACHE_TTL_MS = 5 * 60 * 1000
-const DEFAULT_DEVICE_LIST_CACHE_TTL_MS = 5 * 60 * 1000
+import { resolvePositive } from '@util/coercion'
 
 interface Destroyable {
     destroy: () => void | Promise<void>
 }
-
-const NOOP_MESSAGE_STORE: WaMessageStore = Object.freeze({
-    upsert: async (_record: WaStoredMessageRecord): Promise<void> => {},
-    getById: async (_id: string): Promise<WaStoredMessageRecord | null> => null,
-    listByThread: async (
-        _threadJid: string,
-        _limit?: number,
-        _beforeTimestampMs?: number
-    ): Promise<readonly WaStoredMessageRecord[]> =>
-        EMPTY_STORE_LIST as readonly WaStoredMessageRecord[],
-    deleteById: async (_id: string): Promise<number> => 0,
-    clear: async (): Promise<void> => {}
-})
-
-const NOOP_THREAD_STORE: WaThreadStore = Object.freeze({
-    upsert: async (_record: WaStoredThreadRecord): Promise<void> => {},
-    getByJid: async (_jid: string): Promise<WaStoredThreadRecord | null> => null,
-    list: async (_limit?: number): Promise<readonly WaStoredThreadRecord[]> =>
-        EMPTY_STORE_LIST as readonly WaStoredThreadRecord[],
-    deleteByJid: async (_jid: string): Promise<number> => 0,
-    clear: async (): Promise<void> => {}
-})
-
-const NOOP_CONTACT_STORE: WaContactStore = Object.freeze({
-    upsert: async (_record: WaStoredContactRecord): Promise<void> => {},
-    getByJid: async (_jid: string): Promise<WaStoredContactRecord | null> => null,
-    deleteByJid: async (_jid: string): Promise<number> => 0,
-    clear: async (): Promise<void> => {}
-})
-
-const NOOP_PARTICIPANTS_STORE: WaParticipantsStore = Object.freeze({
-    getTtlMs: (): number => DEFAULT_PARTICIPANTS_CACHE_TTL_MS,
-    upsertGroupParticipants: async (_snapshot: WaParticipantsSnapshot): Promise<void> => {},
-    getGroupParticipants: async (
-        _groupJid: string,
-        _nowMs?: number
-    ): Promise<WaParticipantsSnapshot | null> => null,
-    deleteGroupParticipants: async (_groupJid: string): Promise<number> => 0,
-    cleanupExpired: async (_nowMs: number): Promise<number> => 0,
-    clear: async (): Promise<void> => {},
-    destroy: async (): Promise<void> => {}
-})
-
-const NOOP_DEVICE_LIST_STORE: WaDeviceListStore = Object.freeze({
-    getTtlMs: (): number => DEFAULT_DEVICE_LIST_CACHE_TTL_MS,
-    upsertUserDevices: async (_snapshot: WaDeviceListSnapshot): Promise<void> => {},
-    getUserDevices: async (
-        _userJid: string,
-        _nowMs?: number
-    ): Promise<WaDeviceListSnapshot | null> => null,
-    deleteUserDevices: async (_userJid: string): Promise<number> => 0,
-    cleanupExpired: async (_nowMs: number): Promise<number> => 0,
-    clear: async (): Promise<void> => {},
-    destroy: async (): Promise<void> => {}
-})
 
 const DEFAULT_PROVIDERS: Required<WaStoreProviderSelection> = {
     auth: 'sqlite',
@@ -116,9 +58,16 @@ const DEFAULT_CACHE_PROVIDERS: Required<WaStoreCacheProviderSelection> = {
 }
 
 const DEFAULT_CACHE_TTLS_MS: Required<WaStoreCacheTtlSelection> = {
-    retryMs: DEFAULT_RETRY_CACHE_TTL_MS,
-    participantsMs: DEFAULT_PARTICIPANTS_CACHE_TTL_MS,
-    deviceListMs: DEFAULT_DEVICE_LIST_CACHE_TTL_MS
+    retryMs: 7 * 24 * 60 * 60 * 1000,
+    participantsMs: 5 * 60 * 1000,
+    deviceListMs: 5 * 60 * 1000
+}
+
+const DEFAULT_SQLITE_BATCH_SIZES: Required<WaStoreSqliteBatchSizeSelection> = {
+    deviceList: 500,
+    senderKeyDistribution: 250,
+    signalPreKey: 500,
+    signalHasSession: 250
 }
 
 function resolveStoreValue<T>(
@@ -134,20 +83,6 @@ function resolveStoreValue<T>(
         throw new Error(`${domainPath} must resolve to a store instance`)
     }
     return resolved
-}
-
-function resolvePositiveTtlMs(
-    value: number | undefined,
-    fallback: number,
-    configPath: string
-): number {
-    if (value === undefined) {
-        return fallback
-    }
-    if (Number.isSafeInteger(value) && value > 0) {
-        return value
-    }
-    throw new Error(`${configPath} must be a positive safe integer`)
 }
 
 function hasDestroy(value: unknown): value is Destroyable {
@@ -176,20 +111,42 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
         ...(options.cacheProviders ?? {})
     }
     const cacheTtlsMs = Object.freeze({
-        retry: resolvePositiveTtlMs(
+        retry: resolvePositive(
             options.cacheTtlMs?.retryMs,
             DEFAULT_CACHE_TTLS_MS.retryMs,
             'cacheTtlMs.retryMs'
         ),
-        participants: resolvePositiveTtlMs(
+        participants: resolvePositive(
             options.cacheTtlMs?.participantsMs,
             DEFAULT_CACHE_TTLS_MS.participantsMs,
             'cacheTtlMs.participantsMs'
         ),
-        deviceList: resolvePositiveTtlMs(
+        deviceList: resolvePositive(
             options.cacheTtlMs?.deviceListMs,
             DEFAULT_CACHE_TTLS_MS.deviceListMs,
             'cacheTtlMs.deviceListMs'
+        )
+    } as const)
+    const sqliteBatchSizes = Object.freeze({
+        deviceList: resolvePositive(
+            options.sqlite?.batchSizes?.deviceList,
+            DEFAULT_SQLITE_BATCH_SIZES.deviceList,
+            'sqlite.batchSizes.deviceList'
+        ),
+        senderKeyDistribution: resolvePositive(
+            options.sqlite?.batchSizes?.senderKeyDistribution,
+            DEFAULT_SQLITE_BATCH_SIZES.senderKeyDistribution,
+            'sqlite.batchSizes.senderKeyDistribution'
+        ),
+        signalPreKey: resolvePositive(
+            options.sqlite?.batchSizes?.signalPreKey,
+            DEFAULT_SQLITE_BATCH_SIZES.signalPreKey,
+            'sqlite.batchSizes.signalPreKey'
+        ),
+        signalHasSession: resolvePositive(
+            options.sqlite?.batchSizes?.signalHasSession,
+            DEFAULT_SQLITE_BATCH_SIZES.signalHasSession,
+            'sqlite.batchSizes.signalHasSession'
         )
     } as const)
     const sessions = new Map<string, WaStoreSession>()
@@ -259,6 +216,7 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
                 custom?.contacts,
                 'custom.contacts'
             )
+            const memoryLimits: WaStoreMemoryLimitSelection = options.memory?.limits ?? {}
 
             const requiresSqlite =
                 !customAuth ||
@@ -291,17 +249,33 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
             const signalStore =
                 customSignal ??
                 (providers.signal === 'memory'
-                    ? new WaSignalMemoryStore()
-                    : new WaSignalSqliteStore(sqliteOptions!))
+                    ? new WaSignalMemoryStore({
+                          maxPreKeys: memoryLimits.signalPreKeys,
+                          maxSessions: memoryLimits.signalSessions,
+                          maxRemoteIdentities: memoryLimits.signalRemoteIdentities
+                      })
+                    : new WaSignalSqliteStore(sqliteOptions!, {
+                          preKeyBatchSize: sqliteBatchSizes.signalPreKey,
+                          hasSessionBatchSize: sqliteBatchSizes.signalHasSession
+                      }))
             const senderKeyStore =
                 customSenderKey ??
                 (providers.senderKey === 'memory'
-                    ? new SenderKeyMemoryStore()
-                    : new SenderKeySqliteStore(sqliteOptions!))
+                    ? new SenderKeyMemoryStore({
+                          maxSenderKeys: memoryLimits.senderKeys,
+                          maxSenderDistributions: memoryLimits.senderDistributions
+                      })
+                    : new SenderKeySqliteStore(
+                          sqliteOptions!,
+                          sqliteBatchSizes.senderKeyDistribution
+                      ))
             const appStateStore =
                 customAppState ??
                 (providers.appState === 'memory'
-                    ? new WaAppStateMemoryStore()
+                    ? new WaAppStateMemoryStore(undefined, {
+                          maxSyncKeys: memoryLimits.appStateSyncKeys,
+                          maxCollectionEntries: memoryLimits.appStateCollectionEntries
+                      })
                     : new WaAppStateSqliteStore(sqliteOptions!))
             const retryStore =
                 customRetry ??
@@ -313,35 +287,49 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
                 (cacheProviders.participants === 'sqlite'
                     ? new WaParticipantsSqliteStore(sqliteOptions!, cacheTtlsMs.participants)
                     : cacheProviders.participants === 'memory'
-                      ? new WaParticipantsMemoryStore(cacheTtlsMs.participants)
+                      ? new WaParticipantsMemoryStore(cacheTtlsMs.participants, {
+                            maxGroups: memoryLimits.participantsGroups
+                        })
                       : NOOP_PARTICIPANTS_STORE)
             const deviceListStore =
                 customDeviceList ??
                 (cacheProviders.deviceList === 'sqlite'
-                    ? new WaDeviceListSqliteStore(sqliteOptions!, cacheTtlsMs.deviceList)
+                    ? new WaDeviceListSqliteStore(
+                          sqliteOptions!,
+                          cacheTtlsMs.deviceList,
+                          sqliteBatchSizes.deviceList
+                      )
                     : cacheProviders.deviceList === 'memory'
-                      ? new WaDeviceListMemoryStore(cacheTtlsMs.deviceList)
+                      ? new WaDeviceListMemoryStore(cacheTtlsMs.deviceList, {
+                            maxUsers: memoryLimits.deviceListUsers
+                        })
                       : NOOP_DEVICE_LIST_STORE)
             const messageStore =
                 customMessages ??
                 (providers.messages === 'sqlite'
                     ? new WaMessageSqliteStore(sqliteOptions!)
                     : providers.messages === 'memory'
-                      ? new WaMessageMemoryStore()
+                      ? new WaMessageMemoryStore({
+                            maxMessages: memoryLimits.messages
+                        })
                       : NOOP_MESSAGE_STORE)
             const threadStore =
                 customThreads ??
                 (providers.threads === 'sqlite'
                     ? new WaThreadSqliteStore(sqliteOptions!)
                     : providers.threads === 'memory'
-                      ? new WaThreadMemoryStore()
+                      ? new WaThreadMemoryStore({
+                            maxThreads: memoryLimits.threads
+                        })
                       : NOOP_THREAD_STORE)
             const contactStore =
                 customContacts ??
                 (providers.contacts === 'sqlite'
                     ? new WaContactSqliteStore(sqliteOptions!)
                     : providers.contacts === 'memory'
-                      ? new WaContactMemoryStore()
+                      ? new WaContactMemoryStore({
+                            maxContacts: memoryLimits.contacts
+                        })
                       : NOOP_CONTACT_STORE)
 
             let cachesDestroyed = false

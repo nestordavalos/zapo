@@ -52,9 +52,6 @@ import type { BinaryNode } from '@transport/types'
 import { WaComms } from '@transport/WaComms'
 import { toError } from '@util/primitives'
 
-const WA_DEFAULT_UV_THREADPOOL_SIZE = 4
-const WA_RECOMMENDED_UV_THREADPOOL_SIZE = 16
-let waThreadpoolHintLogged = false
 type WaIncomingProtocolType = NonNullable<Proto.Message.IProtocolMessage['type']>
 const SYNC_RELATED_PROTOCOL_TYPES = new Set<WaIncomingProtocolType>([
     proto.Message.ProtocolMessage.Type.APP_STATE_SYNC_KEY_REQUEST,
@@ -62,18 +59,6 @@ const SYNC_RELATED_PROTOCOL_TYPES = new Set<WaIncomingProtocolType>([
     proto.Message.ProtocolMessage.Type.PEER_DATA_OPERATION_REQUEST_MESSAGE,
     proto.Message.ProtocolMessage.Type.PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE
 ])
-
-function readUvThreadpoolSize(): number {
-    const raw = process.env.UV_THREADPOOL_SIZE
-    if (!raw) {
-        return WA_DEFAULT_UV_THREADPOOL_SIZE
-    }
-    const parsed = Number(raw)
-    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-        return WA_DEFAULT_UV_THREADPOOL_SIZE
-    }
-    return parsed
-}
 
 export class WaClient extends EventEmitter {
     private readonly options!: Readonly<WaClientOptions>
@@ -147,25 +132,6 @@ export class WaClient extends EventEmitter {
         Object.assign(this, dependencies)
 
         this.bindNodeTransportEvents()
-        this.logThreadpoolHintIfNeeded()
-    }
-
-    private logThreadpoolHintIfNeeded(): void {
-        if (waThreadpoolHintLogged) {
-            return
-        }
-        waThreadpoolHintLogged = true
-        const configuredSize = readUvThreadpoolSize()
-        if (configuredSize >= WA_RECOMMENDED_UV_THREADPOOL_SIZE) {
-            return
-        }
-        this.logger.info(
-            'crypto throughput hint: increase UV_THREADPOOL_SIZE for multi-session workloads',
-            {
-                uvThreadpoolSize: configuredSize,
-                recommendedAtLeast: WA_RECOMMENDED_UV_THREADPOOL_SIZE
-            }
-        )
     }
 
     public override on<K extends keyof WaClientEventMap>(
@@ -211,7 +177,6 @@ export class WaClient extends EventEmitter {
     }
 
     public async sendNode(node: BinaryNode): Promise<void> {
-        this.logger.trace('wa client sendNode', { tag: node.tag, id: node.attrs.id })
         try {
             await this.nodeOrchestrator.sendNode(node)
         } catch (error) {

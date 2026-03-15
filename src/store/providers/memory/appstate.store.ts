@@ -11,13 +11,18 @@ import type {
     WaAppStateStore
 } from '@store/contracts/appstate.store'
 import { uint8Equal } from '@util/bytes'
+import { resolvePositive } from '@util/coercion'
 import { setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 
 const DEFAULT_APPSTATE_MEMORY_STORE_LIMITS = Object.freeze({
     syncKeys: 4_096,
     collectionEntries: 50_000
 })
+
+export interface WaAppStateMemoryStoreOptions {
+    readonly maxSyncKeys?: number
+    readonly maxCollectionEntries?: number
+}
 
 function toBoundedMap<K, V>(entries: Iterable<readonly [K, V]>, maxEntries: number): Map<K, V> {
     const map = new Map<K, V>()
@@ -39,16 +44,18 @@ export class WaAppStateMemoryStore implements WaAppStateStore {
     private readonly maxSyncKeys: number
     private readonly maxCollectionEntries: number
 
-    public constructor(initial?: WaAppStateStoreData) {
+    public constructor(initial?: WaAppStateStoreData, options: WaAppStateMemoryStoreOptions = {}) {
         this.keys = new Map()
         this.collections = new Map()
-        this.maxSyncKeys = readPositiveLimit(
-            'WA_APPSTATE_MEMORY_STORE_MAX_SYNC_KEYS',
-            DEFAULT_APPSTATE_MEMORY_STORE_LIMITS.syncKeys
+        this.maxSyncKeys = resolvePositive(
+            options.maxSyncKeys,
+            DEFAULT_APPSTATE_MEMORY_STORE_LIMITS.syncKeys,
+            'WaAppStateMemoryStoreOptions.maxSyncKeys'
         )
-        this.maxCollectionEntries = readPositiveLimit(
-            'WA_APPSTATE_MEMORY_STORE_MAX_COLLECTION_ENTRIES',
-            DEFAULT_APPSTATE_MEMORY_STORE_LIMITS.collectionEntries
+        this.maxCollectionEntries = resolvePositive(
+            options.maxCollectionEntries,
+            DEFAULT_APPSTATE_MEMORY_STORE_LIMITS.collectionEntries,
+            'WaAppStateMemoryStoreOptions.maxCollectionEntries'
         )
         if (initial) {
             for (const key of initial.keys) {

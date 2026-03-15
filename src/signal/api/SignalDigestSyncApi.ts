@@ -168,9 +168,7 @@ export class SignalDigestSyncApi {
             }
         }
 
-        const preKeys = await Promise.all(
-            digest.preKeyIds.map((preKeyId) => this.signalStore.getPreKeyById(preKeyId))
-        )
+        const preKeys = await this.signalStore.getPreKeysById(digest.preKeyIds)
         const bytesToHash: Uint8Array[] = [
             registrationInfo.identityKeyPair.pubKey,
             signedPreKey.keyPair.pubKey,

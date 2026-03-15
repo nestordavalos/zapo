@@ -3,6 +3,7 @@ import type { SenderKeyDistributionRecord, SenderKeyRecord, SignalAddress } from
 export interface WaSenderKeyStore {
     upsertSenderKey(record: SenderKeyRecord): Promise<void>
     upsertSenderKeyDistribution(record: SenderKeyDistributionRecord): Promise<void>
+    upsertSenderKeyDistributions(records: readonly SenderKeyDistributionRecord[]): Promise<void>
     getGroupSenderKeyList(groupId: string): Promise<{
         readonly skList: readonly SenderKeyRecord[]
         readonly skDistribList: readonly SenderKeyDistributionRecord[]
@@ -12,6 +13,10 @@ export interface WaSenderKeyStore {
         groupId: string,
         sender: SignalAddress
     ): Promise<SenderKeyDistributionRecord | null>
+    getDeviceSenderKeyDistributions(
+        groupId: string,
+        senders: readonly SignalAddress[]
+    ): Promise<readonly (SenderKeyDistributionRecord | null)[]>
     deleteDeviceSenderKey(target: SignalAddress, groupId?: string): Promise<number>
     markForgetSenderKey(groupId: string, participants: readonly SignalAddress[]): Promise<number>
 }

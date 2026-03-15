@@ -1,7 +1,8 @@
 import type { WaDeviceListSnapshot, WaDeviceListStore } from '@store/contracts/device-list.store'
 import { BaseSqliteStore } from '@store/providers/sqlite/BaseSqliteStore'
+import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 import type { WaSqliteStorageOptions } from '@store/types'
-import { asNumber, asString } from '@util/coercion'
+import { asNumber, asString, resolvePositive } from '@util/coercion'
 
 interface DeviceListRow extends Record<string, unknown> {
     readonly user_jid: unknown
@@ -10,14 +11,27 @@ interface DeviceListRow extends Record<string, unknown> {
     readonly expires_at_ms: unknown
 }
 
-const DEFAULT_DEVICE_LIST_TTL_MS = 5 * 60 * 1000
+const DEFAULTS = Object.freeze({
+    ttlMs: 5 * 60 * 1000,
+    batchSize: 500
+} as const)
 
 export class WaDeviceListSqliteStore extends BaseSqliteStore implements WaDeviceListStore {
     private readonly ttlMs: number
+    private readonly batchSize: number
 
-    public constructor(options: WaSqliteStorageOptions, ttlMs = DEFAULT_DEVICE_LIST_TTL_MS) {
+    public constructor(
+        options: WaSqliteStorageOptions,
+        ttlMs = DEFAULTS.ttlMs,
+        batchSize?: number
+    ) {
         super(options, ['deviceList'])
         this.ttlMs = ttlMs
+        this.batchSize = resolvePositive(
+            batchSize,
+            DEFAULTS.batchSize,
+            'deviceList.sqlite.batchSize'
+        )
     }
 
     public getTtlMs(): number {
@@ -26,26 +40,18 @@ export class WaDeviceListSqliteStore extends BaseSqliteStore implements WaDevice
 
     public async upsertUserDevices(snapshot: WaDeviceListSnapshot): Promise<void> {
         const db = await this.getConnection()
-        db.run(
-            `INSERT INTO device_list_cache (
-                session_id,
-                user_jid,
-                device_jids_json,
-                updated_at_ms,
-                expires_at_ms
-            ) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, user_jid) DO UPDATE SET
-                device_jids_json=excluded.device_jids_json,
-                updated_at_ms=excluded.updated_at_ms,
-                expires_at_ms=excluded.expires_at_ms`,
-            [
-                this.options.sessionId,
-                snapshot.userJid,
-                JSON.stringify(snapshot.deviceJids),
-                snapshot.updatedAtMs,
-                snapshot.updatedAtMs + this.ttlMs
-            ]
-        )
+        this.upsertUserDevicesRow(db, snapshot)
+    }
+
+    public async upsertUserDevicesBatch(snapshots: readonly WaDeviceListSnapshot[]): Promise<void> {
+        if (snapshots.length === 0) {
+            return
+        }
+        await this.withTransaction((db) => {
+            for (const snapshot of snapshots) {
+                this.upsertUserDevicesRow(db, snapshot)
+            }
+        })
     }
 
     public async getUserDevices(
@@ -80,6 +86,50 @@ export class WaDeviceListSqliteStore extends BaseSqliteStore implements WaDevice
         }
     }
 
+    public async getUserDevicesBatch(
+        userJids: readonly string[],
+        nowMs = Date.now()
+    ): Promise<readonly (WaDeviceListSnapshot | null)[]> {
+        if (userJids.length === 0) {
+            return []
+        }
+        const uniqueUserJids = [...new Set(userJids)]
+        return this.withTransaction((db) => {
+            const activeByUserJid = new Map<string, WaDeviceListSnapshot>()
+            const expiredUserJids: string[] = []
+            for (let start = 0; start < uniqueUserJids.length; start += this.batchSize) {
+                const batch = uniqueUserJids.slice(start, start + this.batchSize)
+                const placeholders = batch.map(() => '?').join(', ')
+                const rows = db.all<DeviceListRow>(
+                    `SELECT user_jid, device_jids_json, updated_at_ms, expires_at_ms
+                     FROM device_list_cache
+                     WHERE session_id = ? AND user_jid IN (${placeholders})`,
+                    [this.options.sessionId, ...batch]
+                )
+                for (const row of rows) {
+                    const userJid = asString(row.user_jid, 'device_list_cache.user_jid')
+                    const expiresAtMs = asNumber(
+                        row.expires_at_ms,
+                        'device_list_cache.expires_at_ms'
+                    )
+                    if (expiresAtMs <= nowMs) {
+                        expiredUserJids.push(userJid)
+                        continue
+                    }
+                    activeByUserJid.set(userJid, {
+                        userJid,
+                        deviceJids: decodeDeviceJids(row.device_jids_json),
+                        updatedAtMs: asNumber(row.updated_at_ms, 'device_list_cache.updated_at_ms')
+                    })
+                }
+            }
+            if (expiredUserJids.length > 0) {
+                this.deleteUserDevicesByJids(db, expiredUserJids)
+            }
+            return userJids.map((userJid) => activeByUserJid.get(userJid) ?? null)
+        })
+    }
+
     public async deleteUserDevices(userJid: string): Promise<number> {
         const db = await this.getConnection()
         db.run(
@@ -105,6 +155,44 @@ export class WaDeviceListSqliteStore extends BaseSqliteStore implements WaDevice
     public async clear(): Promise<void> {
         const db = await this.getConnection()
         db.run('DELETE FROM device_list_cache WHERE session_id = ?', [this.options.sessionId])
+    }
+
+    private upsertUserDevicesRow(db: WaSqliteConnection, snapshot: WaDeviceListSnapshot): void {
+        db.run(
+            `INSERT INTO device_list_cache (
+                session_id,
+                user_jid,
+                device_jids_json,
+                updated_at_ms,
+                expires_at_ms
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, user_jid) DO UPDATE SET
+                device_jids_json=excluded.device_jids_json,
+                updated_at_ms=excluded.updated_at_ms,
+                expires_at_ms=excluded.expires_at_ms`,
+            [
+                this.options.sessionId,
+                snapshot.userJid,
+                JSON.stringify(snapshot.deviceJids),
+                snapshot.updatedAtMs,
+                snapshot.updatedAtMs + this.ttlMs
+            ]
+        )
+    }
+
+    private deleteUserDevicesByJids(db: WaSqliteConnection, userJids: readonly string[]): void {
+        if (userJids.length === 0) {
+            return
+        }
+        for (let start = 0; start < userJids.length; start += this.batchSize) {
+            const batch = userJids.slice(start, start + this.batchSize)
+            const placeholders = batch.map(() => '?').join(', ')
+            db.run(
+                `DELETE FROM device_list_cache
+                 WHERE session_id = ? AND user_jid IN (${placeholders})`,
+                [this.options.sessionId, ...batch]
+            )
+        }
     }
 }
 

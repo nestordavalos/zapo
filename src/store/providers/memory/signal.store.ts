@@ -6,8 +6,8 @@ import type {
     SignedPreKeyRecord
 } from '@signal/types'
 import type { WaSignalStore as WaSignalStoreContract } from '@store/contracts/signal.store'
+import { resolvePositive } from '@util/coercion'
 import { setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 import { signalAddressKey } from '@util/signal-address'
 
 const DEFAULT_SIGNAL_STORE_LIMITS = Object.freeze({
@@ -15,6 +15,12 @@ const DEFAULT_SIGNAL_STORE_LIMITS = Object.freeze({
     sessions: 8_192,
     remoteIdentities: 8_192
 })
+
+export interface WaSignalMemoryStoreOptions {
+    readonly maxPreKeys?: number
+    readonly maxSessions?: number
+    readonly maxRemoteIdentities?: number
+}
 
 export class WaSignalMemoryStore implements WaSignalStoreContract {
     private registrationInfo: RegistrationInfo | null
@@ -30,7 +36,7 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
     private readonly maxSessions: number
     private readonly maxRemoteIdentities: number
 
-    public constructor() {
+    public constructor(options: WaSignalMemoryStoreOptions = {}) {
         this.registrationInfo = null
         this.signedPreKey = null
         this.signedPreKeyRotationTs = null
@@ -40,17 +46,20 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
         this.signalSessions = new Map()
         this.remoteIdentities = new Map()
         this.nextPreKeyId = 1
-        this.maxPreKeys = readPositiveLimit(
-            'WA_SIGNAL_MEMORY_STORE_MAX_PREKEYS',
-            DEFAULT_SIGNAL_STORE_LIMITS.preKeys
+        this.maxPreKeys = resolvePositive(
+            options.maxPreKeys,
+            DEFAULT_SIGNAL_STORE_LIMITS.preKeys,
+            'WaSignalMemoryStoreOptions.maxPreKeys'
         )
-        this.maxSessions = readPositiveLimit(
-            'WA_SIGNAL_MEMORY_STORE_MAX_SESSIONS',
-            DEFAULT_SIGNAL_STORE_LIMITS.sessions
+        this.maxSessions = resolvePositive(
+            options.maxSessions,
+            DEFAULT_SIGNAL_STORE_LIMITS.sessions,
+            'WaSignalMemoryStoreOptions.maxSessions'
         )
-        this.maxRemoteIdentities = readPositiveLimit(
-            'WA_SIGNAL_MEMORY_STORE_MAX_REMOTE_IDENTITIES',
-            DEFAULT_SIGNAL_STORE_LIMITS.remoteIdentities
+        this.maxRemoteIdentities = resolvePositive(
+            options.maxRemoteIdentities,
+            DEFAULT_SIGNAL_STORE_LIMITS.remoteIdentities,
+            'WaSignalMemoryStoreOptions.maxRemoteIdentities'
         )
     }
 
@@ -133,6 +142,12 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
         return this.preKeys.get(keyId) ?? null
     }
 
+    public async getPreKeysById(
+        keyIds: readonly number[]
+    ): Promise<readonly (PreKeyRecord | null)[]> {
+        return keyIds.map((keyId) => this.preKeys.get(keyId) ?? null)
+    }
+
     public async consumePreKeyById(keyId: number): Promise<PreKeyRecord | null> {
         const record = this.preKeys.get(keyId) ?? null
         if (!record) {
@@ -169,6 +184,14 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
         return this.serverHasPreKeys
     }
 
+    public async hasSession(address: SignalAddress): Promise<boolean> {
+        return this.signalSessions.has(signalAddressKey(address))
+    }
+
+    public async hasSessions(addresses: readonly SignalAddress[]): Promise<readonly boolean[]> {
+        return addresses.map((address) => this.signalSessions.has(signalAddressKey(address)))
+    }
+
     public async getSession(address: SignalAddress): Promise<SignalSessionRecord | null> {
         return this.signalSessions.get(signalAddressKey(address)) ?? null
     }
@@ -197,6 +220,22 @@ export class WaSignalMemoryStore implements WaSignalStoreContract {
             identityKey,
             this.maxRemoteIdentities
         )
+    }
+
+    public async setRemoteIdentities(
+        entries: readonly {
+            readonly address: SignalAddress
+            readonly identityKey: Uint8Array
+        }[]
+    ): Promise<void> {
+        for (const entry of entries) {
+            setBoundedMapEntry(
+                this.remoteIdentities,
+                signalAddressKey(entry.address),
+                entry.identityKey,
+                this.maxRemoteIdentities
+            )
+        }
     }
 
     private addUploadedPreKey(keyId: number): void {

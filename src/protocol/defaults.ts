@@ -3,6 +3,7 @@ import { getWaCompanionPlatformId, WA_BROWSERS } from '@protocol/browser'
 export const WA_DEFAULTS = Object.freeze({
     HOST_DOMAIN: 's.whatsapp.net',
     GROUP_SERVER: 'g.us',
+    BROADCAST_SERVER: 'broadcast',
     DEVICE_BROWSER: WA_BROWSERS.FIREFOX,
     DEVICE_PLATFORM: getWaCompanionPlatformId(WA_BROWSERS.FIREFOX),
     CHAT_SOCKET_URLS: ['wss://web.whatsapp.com/ws/chat', 'wss://web.whatsapp.com:5222/ws/chat'],

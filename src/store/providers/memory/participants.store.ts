@@ -2,8 +2,8 @@ import type {
     WaParticipantsSnapshot,
     WaParticipantsStore
 } from '@store/contracts/participants.store'
+import { resolvePositive } from '@util/coercion'
 import { resolveCleanupIntervalMs, setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 
 interface WaParticipantsMemoryStoreRecord extends WaParticipantsSnapshot {
     readonly expiresAtMs: number
@@ -14,18 +14,23 @@ const DEFAULTS = Object.freeze({
     maxGroups: 4_096
 } as const)
 
+export interface WaParticipantsMemoryStoreOptions {
+    readonly maxGroups?: number
+}
+
 export class WaParticipantsMemoryStore implements WaParticipantsStore {
     private readonly records: Map<string, WaParticipantsMemoryStoreRecord>
     private readonly ttlMs: number
     private readonly maxGroups: number
     private readonly cleanupTimer: NodeJS.Timeout
 
-    public constructor(ttlMs = DEFAULTS.ttlMs) {
+    public constructor(ttlMs = DEFAULTS.ttlMs, options: WaParticipantsMemoryStoreOptions = {}) {
         this.records = new Map()
         this.ttlMs = ttlMs
-        this.maxGroups = readPositiveLimit(
-            'WA_PARTICIPANTS_MEMORY_STORE_MAX_GROUPS',
-            DEFAULTS.maxGroups
+        this.maxGroups = resolvePositive(
+            options.maxGroups,
+            DEFAULTS.maxGroups,
+            'WaParticipantsMemoryStoreOptions.maxGroups'
         )
         this.cleanupTimer = setInterval(() => {
             void this.cleanupExpired(Date.now())

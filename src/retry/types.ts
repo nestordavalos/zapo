@@ -28,6 +28,7 @@ export interface WaParsedRetryRequest {
     readonly recipient?: string
     readonly originalMsgId: string
     readonly retryCount: number
+    readonly retryReason?: number
     readonly t?: string
     readonly regId: number
     readonly keyBundle?: WaRetryKeyBundle

@@ -4,6 +4,8 @@ export type {
     WaCreateStoreOptions,
     WaSqliteDriver,
     WaSqliteStorageOptions,
+    WaStoreSqliteBatchSizeSelection,
+    WaStoreMemoryLimitSelection,
     WaStoreCacheProviderSelection,
     WaStoreCacheTtlSelection,
     WaStore,

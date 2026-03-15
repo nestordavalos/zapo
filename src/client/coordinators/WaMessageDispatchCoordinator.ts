@@ -4,6 +4,7 @@ import type { Logger } from '@infra/log/types'
 import { resolveMessageTypeAttr } from '@message/content'
 import { wrapDeviceSentMessage } from '@message/device-sent'
 import { writeRandomPadMax16 } from '@message/padding'
+import { computePhashV2 } from '@message/phash'
 import type {
     WaEncryptedMessageInput,
     WaMessagePublishOptions,
@@ -38,11 +39,13 @@ import type { WaSignalStore } from '@store/contracts/signal.store'
 import { encodeBinaryNode } from '@transport/binary'
 import {
     buildDirectMessageFanoutNode,
+    buildGroupDirectMessageNode,
     buildGroupSenderKeyMessageNode
 } from '@transport/node/builders/message'
 import type { BinaryNode } from '@transport/types'
 import { uint8Equal } from '@util/bytes'
 import { toError } from '@util/primitives'
+import { signalAddressKey } from '@util/signal-address'
 
 interface WaMessageDispatchCoordinatorOptions {
     readonly logger: Logger
@@ -60,6 +63,14 @@ interface WaMessageDispatchCoordinatorOptions {
     readonly getCurrentMeJid: () => string | null | undefined
     readonly getCurrentMeLid: () => string | null | undefined
     readonly getCurrentSignedIdentity: () => Proto.IADVSignedDeviceIdentity | null | undefined
+}
+
+type GroupAddressingMode = 'pn' | 'lid'
+
+interface GroupSendRetryContext {
+    readonly retried?: boolean
+    readonly forceRefreshParticipants?: boolean
+    readonly forceAddressingMode?: GroupAddressingMode
 }
 
 export class WaMessageDispatchCoordinator {
@@ -218,16 +229,15 @@ export class WaMessageDispatchCoordinator {
         content: WaSendMessageContent,
         options: WaSendMessageOptions = {}
     ): Promise<WaMessagePublishResult> {
-        const recipientJid = normalizeRecipientJid(
-            to,
-            WA_DEFAULTS.HOST_DOMAIN,
-            WA_DEFAULTS.GROUP_SERVER
-        )
+        const recipientJid = normalizeRecipientJid(to)
         const message = await this.buildMessageContent(content)
         const plaintext = await writeRandomPadMax16(proto.Message.encode(message).finish())
         const type = resolveMessageTypeAttr(message)
 
-        if (isGroupJid(recipientJid, WA_DEFAULTS.GROUP_SERVER)) {
+        if (isGroupJid(recipientJid)) {
+            if (this.shouldUseGroupDirectPath(message)) {
+                return this.publishGroupDirectMessage(recipientJid, plaintext, type, options)
+            }
             return this.publishGroupSenderKeyMessage(recipientJid, plaintext, type, options)
         }
 
@@ -359,14 +369,133 @@ export class WaMessageDispatchCoordinator {
         return true
     }
 
+    private shouldUseGroupDirectPath(message: Proto.IMessage): boolean {
+        const protocolType = message.protocolMessage?.type
+        if (
+            protocolType === proto.Message.ProtocolMessage.Type.REVOKE ||
+            protocolType === proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+        ) {
+            return true
+        }
+        return message.keepInChatMessage?.keepType === proto.KeepType.UNDO_KEEP_FOR_ALL
+    }
+
+    private async publishGroupDirectMessage(
+        groupJid: string,
+        plaintext: Uint8Array,
+        type: string,
+        options: WaSendMessageOptions,
+        retryContext: GroupSendRetryContext = {}
+    ): Promise<WaMessagePublishResult> {
+        const meJid = this.requireCurrentMeJid('sendMessage')
+        const participantUserJids = retryContext.forceRefreshParticipants
+            ? await this.refreshGroupParticipantUsers(groupJid)
+            : await this.resolveGroupParticipantUsers(groupJid)
+        const addressingMode =
+            retryContext.forceAddressingMode ??
+            this.resolveGroupAddressingMode(participantUserJids, groupJid)
+        const senderForPhash = this.resolveSenderForAddressingMode(addressingMode, meJid)
+        const fanoutDeviceJids = await this.resolveGroupParticipantDeviceJids(participantUserJids)
+        if (fanoutDeviceJids.length === 0) {
+            throw new Error('group direct send resolved no target devices')
+        }
+        await this.ensureSignalSessionsBatch(fanoutDeviceJids)
+        const participants = await Promise.all(
+            fanoutDeviceJids.map(async (targetJid) => {
+                const address = parseSignalAddressFromJid(targetJid)
+                await this.ensureSignalSession(address, targetJid)
+                const encrypted = await this.signalProtocol.encryptMessage(address, plaintext)
+                return {
+                    jid: targetJid,
+                    encType: encrypted.type,
+                    ciphertext: encrypted.ciphertext
+                }
+            })
+        )
+        const shouldAttachDeviceIdentity = participants.some(
+            (participant) => participant.encType === 'pkmsg'
+        )
+        const localPhash = await computePhashV2([...fanoutDeviceJids, senderForPhash])
+        const messageNode = buildGroupDirectMessageNode({
+            to: groupJid,
+            type,
+            id: options.id,
+            phash: localPhash,
+            addressingMode,
+            participants,
+            deviceIdentity: shouldAttachDeviceIdentity
+                ? this.getEncodedSignedDeviceIdentity()
+                : undefined
+        })
+        const replayPayload: WaRetryReplayPayload = {
+            mode: 'plaintext',
+            to: groupJid,
+            type,
+            plaintext
+        }
+        const result = await this.publishWithRetryTracking(
+            {
+                messageIdHint: options.id ?? messageNode.attrs.id,
+                toJid: groupJid,
+                messageType: type,
+                replayPayload
+            },
+            async () => this.messageClient.publishNode(messageNode, options)
+        )
+        const ackError = result.ack.error
+        const serverPhash = result.ack.phash
+        const serverAddressingMode = result.ack.addressingMode
+        const hasPhashMismatch = !!serverPhash && serverPhash !== localPhash
+        const hasAddressingMismatch =
+            !!serverAddressingMode && serverAddressingMode !== addressingMode
+        const hasAddressingError = ackError === 421
+        if (
+            !retryContext.retried &&
+            (hasPhashMismatch || hasAddressingMismatch || hasAddressingError)
+        ) {
+            this.logger.warn('group direct publish acknowledged with mismatch metadata', {
+                id: result.id,
+                groupJid,
+                localPhash,
+                serverPhash,
+                localAddressingMode: addressingMode,
+                serverAddressingMode,
+                ackError
+            })
+            return this.publishGroupDirectMessage(
+                groupJid,
+                plaintext,
+                type,
+                {
+                    ...options,
+                    id: result.id
+                },
+                {
+                    retried: true,
+                    forceRefreshParticipants: true,
+                    forceAddressingMode: serverAddressingMode
+                }
+            )
+        }
+        return result
+    }
+
     private async publishGroupSenderKeyMessage(
         groupJid: string,
         plaintext: Uint8Array,
         type: string,
-        options: WaSendMessageOptions
+        options: WaSendMessageOptions,
+        retryContext: GroupSendRetryContext = {}
     ): Promise<WaMessagePublishResult> {
         const meJid = this.requireCurrentMeJid('sendMessage')
-        const sender = parseSignalAddressFromJid(meJid)
+        const participantUserJids = retryContext.forceRefreshParticipants
+            ? await this.refreshGroupParticipantUsers(groupJid)
+            : await this.resolveGroupParticipantUsers(groupJid)
+        const addressingMode =
+            retryContext.forceAddressingMode ??
+            this.resolveGroupAddressingMode(participantUserJids, groupJid)
+        const senderJid = this.resolveSenderForAddressingMode(addressingMode, meJid)
+        const sender = parseSignalAddressFromJid(senderJid)
         const senderKeyDistributionMessage =
             await this.senderKeyManager.createSenderKeyDistributionMessage(groupJid, sender)
         const groupCiphertext = await this.senderKeyManager.encryptGroupMessage(
@@ -374,18 +503,23 @@ export class WaMessageDispatchCoordinator {
             sender,
             plaintext
         )
-        const participantUserJids = await this.resolveGroupParticipantUsers(groupJid)
-        const distributionParticipants = await this.encryptGroupDistributionParticipants(
+        const distributionData = await this.encryptGroupDistributionParticipants(
+            groupJid,
+            sender,
             senderKeyDistributionMessage,
             participantUserJids
         )
+        const { fanoutDeviceJids, distributionParticipants } = distributionData
         const shouldAttachDeviceIdentity = distributionParticipants.some(
             (participant) => participant.encType === 'pkmsg'
         )
+        const localPhash = await computePhashV2([...fanoutDeviceJids, senderJid])
         const messageNode = buildGroupSenderKeyMessageNode({
             to: groupJid,
             type,
             id: options.id,
+            phash: localPhash,
+            addressingMode,
             groupCiphertext: groupCiphertext.ciphertext,
             participants: distributionParticipants,
             deviceIdentity: shouldAttachDeviceIdentity
@@ -399,7 +533,7 @@ export class WaMessageDispatchCoordinator {
             type,
             plaintext
         }
-        return this.publishWithRetryTracking(
+        const result = await this.publishWithRetryTracking(
             {
                 messageIdHint: options.id ?? messageNode.attrs.id,
                 toJid: groupJid,
@@ -408,6 +542,58 @@ export class WaMessageDispatchCoordinator {
             },
             async () => this.messageClient.publishNode(messageNode, options)
         )
+        const distributedAddresses = distributionParticipants.map(
+            (participant) => participant.address
+        )
+        try {
+            await this.senderKeyManager.markSenderKeyDistributed(
+                groupJid,
+                sender,
+                distributedAddresses
+            )
+        } catch (error) {
+            this.logger.warn('failed to mark sender key distribution targets', {
+                groupJid,
+                participants: distributedAddresses.length,
+                message: toError(error).message
+            })
+        }
+        const ackError = result.ack.error
+        const serverPhash = result.ack.phash
+        const serverAddressingMode = result.ack.addressingMode
+        const hasPhashMismatch = !!serverPhash && serverPhash !== localPhash
+        const hasAddressingMismatch =
+            !!serverAddressingMode && serverAddressingMode !== addressingMode
+        const hasAddressingError = ackError === 421
+        if (
+            !retryContext.retried &&
+            (hasPhashMismatch || hasAddressingMismatch || hasAddressingError)
+        ) {
+            this.logger.warn('group message publish acknowledged with mismatch metadata', {
+                id: result.id,
+                groupJid,
+                localPhash,
+                serverPhash,
+                localAddressingMode: addressingMode,
+                serverAddressingMode,
+                ackError
+            })
+            return this.publishGroupSenderKeyMessage(
+                groupJid,
+                plaintext,
+                type,
+                {
+                    ...options,
+                    id: result.id
+                },
+                {
+                    retried: true,
+                    forceRefreshParticipants: true,
+                    forceAddressingMode: serverAddressingMode
+                }
+            )
+        }
+        return result
     }
 
     private async resolveGroupParticipantUsers(groupJid: string): Promise<readonly string[]> {
@@ -435,23 +621,74 @@ export class WaMessageDispatchCoordinator {
             if (!participant || !participant.includes('@')) continue
             try {
                 deduped.add(toUserJid(participant))
-            } catch {
-                // skip invalid jids
+            } catch (error) {
+                this.logger.trace('ignoring malformed participant jid', {
+                    participant,
+                    message: toError(error).message
+                })
             }
         }
         return [...deduped]
     }
 
+    private resolveGroupAddressingMode(
+        participantUserJids: readonly string[],
+        groupJid: string
+    ): GroupAddressingMode {
+        for (const participantJid of participantUserJids) {
+            try {
+                if (splitJid(participantJid).server === 'lid') {
+                    return 'lid'
+                }
+            } catch (error) {
+                this.logger.trace(
+                    'ignoring malformed participant jid in addressing mode resolution',
+                    { participantJid, message: toError(error).message }
+                )
+            }
+        }
+
+        this.logger.trace('group addressing mode resolved to pn (default)', {
+            groupJid,
+            participants: participantUserJids.length
+        })
+        return 'pn'
+    }
+
+    private resolveSenderForAddressingMode(
+        addressingMode: GroupAddressingMode,
+        meJid: string
+    ): string {
+        if (addressingMode === 'lid') {
+            const meLid = this.getCurrentMeLid()
+            if (meLid && meLid.includes('@')) {
+                try {
+                    return normalizeDeviceJid(meLid)
+                } catch (error) {
+                    this.logger.trace('ignoring malformed me lid jid', {
+                        meLid,
+                        message: toError(error).message
+                    })
+                }
+            }
+        }
+        return normalizeDeviceJid(meJid)
+    }
+
     private async encryptGroupDistributionParticipants(
+        groupJid: string,
+        sender: SignalAddress,
         senderKeyDistributionMessage: Proto.Message.ISenderKeyDistributionMessage,
         participantUserJids: readonly string[]
-    ): Promise<
-        readonly {
+    ): Promise<{
+        readonly fanoutDeviceJids: readonly string[]
+        readonly distributionParticipants: readonly {
             readonly jid: string
+            readonly address: SignalAddress
             readonly encType: 'msg' | 'pkmsg'
             readonly ciphertext: Uint8Array
         }[]
-    > {
+    }> {
         const distributionPayload = await writeRandomPadMax16(
             proto.Message.encode({
                 senderKeyDistributionMessage
@@ -459,40 +696,86 @@ export class WaMessageDispatchCoordinator {
         )
         const fanoutDeviceJids = await this.resolveGroupParticipantDeviceJids(participantUserJids)
         if (fanoutDeviceJids.length === 0) {
-            return []
+            return {
+                fanoutDeviceJids,
+                distributionParticipants: []
+            }
         }
-        await this.ensureSignalSessionsBatch(fanoutDeviceJids)
-        return Promise.all(
-            fanoutDeviceJids.map(async (targetJid) => {
-                const address = parseSignalAddressFromJid(targetJid)
-                await this.ensureSignalSession(address, targetJid)
+        const fanoutTargets = fanoutDeviceJids.map((jid) => ({
+            jid,
+            address: parseSignalAddressFromJid(jid)
+        }))
+        const pendingAddresses = await this.senderKeyManager.filterParticipantsNeedingDistribution(
+            groupJid,
+            sender,
+            fanoutTargets.map((target) => target.address)
+        )
+        if (pendingAddresses.length === 0) {
+            return {
+                fanoutDeviceJids,
+                distributionParticipants: []
+            }
+        }
+        const pendingAddressKeys = new Set(pendingAddresses.map(signalAddressKey))
+        const pendingTargets = fanoutTargets.filter((target) =>
+            pendingAddressKeys.has(signalAddressKey(target.address))
+        )
+        if (pendingTargets.length === 0) {
+            return {
+                fanoutDeviceJids,
+                distributionParticipants: []
+            }
+        }
+        await this.ensureSignalSessionsBatch(pendingTargets.map((target) => target.jid))
+        const distributionParticipants = await Promise.all(
+            pendingTargets.map(async (target) => {
+                await this.ensureSignalSession(target.address, target.jid)
                 const encrypted = await this.signalProtocol.encryptMessage(
-                    address,
+                    target.address,
                     distributionPayload
                 )
                 return {
-                    jid: targetJid,
+                    jid: target.jid,
+                    address: target.address,
                     encType: encrypted.type,
                     ciphertext: encrypted.ciphertext
                 }
             })
         )
+        return {
+            fanoutDeviceJids,
+            distributionParticipants
+        }
     }
 
     private async resolveGroupParticipantDeviceJids(
         participantUserJids: readonly string[]
     ): Promise<readonly string[]> {
-        const meUserJids = new Set<string>()
+        const meDeviceJids = new Set<string>()
         const meJid = this.getCurrentMeJid()
         if (meJid) {
-            meUserJids.add(toUserJid(meJid))
+            try {
+                meDeviceJids.add(normalizeDeviceJid(meJid))
+            } catch (error) {
+                this.logger.trace('ignoring malformed me jid', {
+                    meJid,
+                    message: toError(error).message
+                })
+            }
         }
         const meLid = this.getCurrentMeLid()
         if (meLid && meLid.includes('@')) {
-            meUserJids.add(toUserJid(meLid))
+            try {
+                meDeviceJids.add(normalizeDeviceJid(meLid))
+            } catch (error) {
+                this.logger.trace('ignoring malformed me lid jid', {
+                    meLid,
+                    message: toError(error).message
+                })
+            }
         }
 
-        const candidateUsers = participantUserJids.filter((jid) => !meUserJids.has(toUserJid(jid)))
+        const candidateUsers = [...new Set(participantUserJids)]
         if (candidateUsers.length === 0) {
             return []
         }
@@ -501,17 +784,17 @@ export class WaMessageDispatchCoordinator {
             const synced = await this.signalDeviceSync.syncDeviceList(candidateUsers)
             const fanout = new Set<string>()
             for (const entry of synced) {
-                const entryUserJid = toUserJid(entry.jid)
-                if (meUserJids.has(entryUserJid)) continue
-
                 if (entry.deviceJids.length === 0) {
-                    fanout.add(normalizeDeviceJid(entry.jid))
+                    const normalizedEntryJid = normalizeDeviceJid(entry.jid)
+                    if (meDeviceJids.has(normalizedEntryJid)) continue
+                    fanout.add(normalizedEntryJid)
                     continue
                 }
 
                 for (const deviceJid of entry.deviceJids) {
-                    if (meUserJids.has(toUserJid(deviceJid))) continue
-                    fanout.add(normalizeDeviceJid(deviceJid))
+                    const normalizedDeviceJid = normalizeDeviceJid(deviceJid)
+                    if (meDeviceJids.has(normalizedDeviceJid)) continue
+                    fanout.add(normalizedDeviceJid)
                 }
             }
             return [...fanout]
@@ -523,7 +806,9 @@ export class WaMessageDispatchCoordinator {
                     message: toError(error).message
                 }
             )
-            return [...new Set(candidateUsers.map((jid) => normalizeDeviceJid(jid)))]
+            return [...new Set(candidateUsers.map((jid) => normalizeDeviceJid(jid)))].filter(
+                (jid) => !meDeviceJids.has(jid)
+            )
         }
     }
 
@@ -643,21 +928,14 @@ export class WaMessageDispatchCoordinator {
         if (normalizedTargetJids.length === 0) {
             return
         }
-
-        const missingTargets = (
-            await Promise.all(
-                normalizedTargetJids.map(async (jid) => {
-                    const address = parseSignalAddressFromJid(jid)
-                    const hasSession = await this.signalProtocol.hasSession(address)
-                    if (hasSession) {
-                        return null
-                    }
-                    return { jid, address }
-                })
-            )
-        ).filter((target): target is { readonly jid: string; readonly address: SignalAddress } => {
-            return target !== null
-        })
+        const normalizedTargets = normalizedTargetJids.map((jid) => ({
+            jid,
+            address: parseSignalAddressFromJid(jid)
+        }))
+        const hasSessions = await this.signalProtocol.hasSessions(
+            normalizedTargets.map((target) => target.address)
+        )
+        const missingTargets = normalizedTargets.filter((_, index) => !hasSessions[index])
 
         if (missingTargets.length === 0) {
             return

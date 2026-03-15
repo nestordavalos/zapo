@@ -24,11 +24,50 @@ import type { WaSignalStore as WaSignalStoreContract } from '@store/contracts/si
 import { BaseSqliteStore } from '@store/providers/sqlite/BaseSqliteStore'
 import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 import type { WaSqliteStorageOptions } from '@store/types'
-import { asNumber, asOptionalNumber, toBoolOrUndef } from '@util/coercion'
+import {
+    asNumber,
+    asOptionalNumber,
+    asString,
+    toBoolOrUndef,
+    resolvePositive
+} from '@util/coercion'
+import { signalAddressKey } from '@util/signal-address'
+
+interface SignalSessionExistsRow extends Record<string, unknown> {
+    readonly user: unknown
+    readonly server: unknown
+    readonly device: unknown
+}
+
+const DEFAULTS = Object.freeze({
+    preKeyBatchSize: 500,
+    hasSessionBatchSize: 250
+} as const)
+
+interface WaSignalSqliteStoreOptions {
+    readonly preKeyBatchSize?: number
+    readonly hasSessionBatchSize?: number
+}
 
 export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStoreContract {
-    public constructor(options: WaSqliteStorageOptions) {
+    private readonly preKeyBatchSize: number
+    private readonly hasSessionBatchSize: number
+
+    public constructor(
+        options: WaSqliteStorageOptions,
+        storeOptions: WaSignalSqliteStoreOptions = {}
+    ) {
         super(options, ['signal'])
+        this.preKeyBatchSize = resolvePositive(
+            storeOptions.preKeyBatchSize,
+            DEFAULTS.preKeyBatchSize,
+            'signal.sqlite.preKeyBatchSize'
+        )
+        this.hasSessionBatchSize = resolvePositive(
+            storeOptions.hasSessionBatchSize,
+            DEFAULTS.hasSessionBatchSize,
+            'signal.sqlite.hasSessionBatchSize'
+        )
     }
 
     public async getRegistrationInfo(): Promise<RegistrationInfo | null> {
@@ -194,6 +233,32 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
         return row ? decodeSignalPreKeyRow(row) : null
     }
 
+    public async getPreKeysById(
+        keyIds: readonly number[]
+    ): Promise<readonly (PreKeyRecord | null)[]> {
+        if (keyIds.length === 0) {
+            return []
+        }
+        const db = await this.getConnection()
+        const uniqueKeyIds = [...new Set(keyIds)]
+        const byId = new Map<number, PreKeyRecord>()
+        for (let start = 0; start < uniqueKeyIds.length; start += this.preKeyBatchSize) {
+            const batch = uniqueKeyIds.slice(start, start + this.preKeyBatchSize)
+            const placeholders = batch.map(() => '?').join(', ')
+            const rows = db.all<SignalPreKeyRow>(
+                `SELECT key_id, pub_key, priv_key, uploaded
+                 FROM signal_prekey
+                 WHERE session_id = ? AND key_id IN (${placeholders})`,
+                [this.options.sessionId, ...batch]
+            )
+            for (const row of rows) {
+                const record = decodeSignalPreKeyRow(row)
+                byId.set(record.keyId, record)
+            }
+        }
+        return keyIds.map((keyId) => byId.get(keyId) ?? null)
+    }
+
     public async consumePreKeyById(keyId: number): Promise<PreKeyRecord | null> {
         return this.withTransaction((db) => {
             const row = db.get<SignalPreKeyRow>(
@@ -250,6 +315,53 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
         const db = await this.getConnection()
         const meta = this.getMeta(db)
         return meta.serverHasPreKeys
+    }
+
+    public async hasSession(address: SignalAddress): Promise<boolean> {
+        const db = await this.getConnection()
+        const target = toSignalAddressParts(address)
+        return (
+            db.get<Record<string, unknown>>(
+                `SELECT 1 AS has_session
+                 FROM signal_session
+                 WHERE session_id = ? AND user = ? AND server = ? AND device = ?
+                 LIMIT 1`,
+                [this.options.sessionId, target.user, target.server, target.device]
+            ) !== null
+        )
+    }
+
+    public async hasSessions(addresses: readonly SignalAddress[]): Promise<readonly boolean[]> {
+        if (addresses.length === 0) {
+            return []
+        }
+        const db = await this.getConnection()
+        const targets = addresses.map((address) => toSignalAddressParts(address))
+        const existingKeys = new Set<string>()
+        for (let start = 0; start < targets.length; start += this.hasSessionBatchSize) {
+            const batch = targets.slice(start, start + this.hasSessionBatchSize)
+            const filters = batch.map(() => '(user = ? AND server = ? AND device = ?)').join(' OR ')
+            const params: unknown[] = [this.options.sessionId]
+            for (const target of batch) {
+                params.push(target.user, target.server, target.device)
+            }
+            const rows = db.all<SignalSessionExistsRow>(
+                `SELECT user, server, device
+                 FROM signal_session
+                 WHERE session_id = ? AND (${filters})`,
+                params
+            )
+            for (const row of rows) {
+                existingKeys.add(
+                    signalAddressKey({
+                        user: asString(row.user, 'signal_session.user'),
+                        server: asString(row.server, 'signal_session.server'),
+                        device: asNumber(row.device, 'signal_session.device')
+                    })
+                )
+            }
+        }
+        return addresses.map((address) => existingKeys.has(signalAddressKey(address)))
     }
 
     public async getSession(address: SignalAddress): Promise<SignalSessionRecord | null> {
@@ -312,18 +424,24 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
     public async setRemoteIdentity(address: SignalAddress, identityKey: Uint8Array): Promise<void> {
         const db = await this.getConnection()
         const target = toSignalAddressParts(address)
-        db.run(
-            `INSERT INTO signal_identity (
-                session_id,
-                user,
-                server,
-                device,
-                identity_key
-            ) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, user, server, device) DO UPDATE SET
-                identity_key=excluded.identity_key`,
-            [this.options.sessionId, target.user, target.server, target.device, identityKey]
-        )
+        this.upsertRemoteIdentity(db, target, identityKey)
+    }
+
+    public async setRemoteIdentities(
+        entries: readonly {
+            readonly address: SignalAddress
+            readonly identityKey: Uint8Array
+        }[]
+    ): Promise<void> {
+        if (entries.length === 0) {
+            return
+        }
+        await this.withTransaction((db) => {
+            for (const entry of entries) {
+                const target = toSignalAddressParts(entry.address)
+                this.upsertRemoteIdentity(db, target, entry.identityKey)
+            }
+        })
     }
 
     private upsertPreKey(db: WaSqliteConnection, record: PreKeyRecord): void {
@@ -382,5 +500,24 @@ export class WaSignalSqliteStore extends BaseSqliteStore implements WaSignalStor
                     'signal_meta.signed_prekey_rotation_ts'
                 ) ?? null
         }
+    }
+
+    private upsertRemoteIdentity(
+        db: WaSqliteConnection,
+        target: ReturnType<typeof toSignalAddressParts>,
+        identityKey: Uint8Array
+    ): void {
+        db.run(
+            `INSERT INTO signal_identity (
+                session_id,
+                user,
+                server,
+                device,
+                identity_key
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, user, server, device) DO UPDATE SET
+                identity_key=excluded.identity_key`,
+            [this.options.sessionId, target.user, target.server, target.device, identityKey]
+        )
     }
 }

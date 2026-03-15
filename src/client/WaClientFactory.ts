@@ -436,12 +436,12 @@ export function buildWaClientDependencies(input: {
         logger,
         retryStore: sessionStore.retry,
         signalStore: sessionStore.signal,
+        senderKeyStore: sessionStore.senderKey,
         signalProtocol,
         signalDeviceSync,
         signalMissingPreKeysSync,
         messageClient,
         sendNode: host.sendNode,
-        tryResolvePendingNode: (node) => nodeOrchestrator.tryResolvePending(node),
         getCurrentMeJid,
         getCurrentMeLid,
         getCurrentSignedIdentity

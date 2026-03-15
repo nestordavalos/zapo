@@ -1,14 +1,13 @@
 import type { Logger } from '@infra/log/types'
 import { wrapDeviceSentMessage } from '@message/device-sent'
 import { unpadPkcs7, writeRandomPadMax16 } from '@message/padding'
-import type { WaEncryptedMessageInput } from '@message/types'
 import type { WaMessageClient } from '@message/WaMessageClient'
 import { proto, type Proto } from '@proto'
-import { WA_DEFAULTS } from '@protocol/constants'
 import {
     isGroupOrBroadcastJid,
     normalizeDeviceJid,
     parseSignalAddressFromJid,
+    splitJid,
     toUserJid
 } from '@protocol/jid'
 import { decodeRetryReplayPayload } from '@retry/outbound'
@@ -20,6 +19,7 @@ import type {
 } from '@retry/types'
 import type { SignalProtocol } from '@signal/session/SignalProtocol'
 import { decodeBinaryNode } from '@transport/binary'
+import { buildGroupRetryMessageNode } from '@transport/node/builders/message'
 import { findNodeChild, getNodeChildrenByTag } from '@transport/node/helpers'
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
@@ -63,8 +63,8 @@ export class WaRetryReplayService {
         requesterJid: string,
         retryCount: number
     ): Promise<WaRetryResendResult> {
-        if (isGroupOrBroadcastJid(payload.to, WA_DEFAULTS.GROUP_SERVER)) {
-            return this.resendGroupPlaintextPayload(outbound, payload, requesterJid, retryCount)
+        if (isGroupOrBroadcastJid(payload.to)) {
+            return this.resendGroupPlaintextPayload(outbound, payload, requesterJid)
         }
         let payloadUserJid: string
         let requesterUserJid: string
@@ -82,7 +82,7 @@ export class WaRetryReplayService {
             parseSignalAddressFromJid(requesterJid),
             payload.plaintext
         )
-        await this.messageClient.publishEncrypted({
+        await this.messageClient.sendEncrypted({
             to: requesterJid,
             encType: encrypted.type,
             ciphertext: encrypted.ciphertext,
@@ -96,8 +96,7 @@ export class WaRetryReplayService {
     private async resendGroupPlaintextPayload(
         outbound: WaRetryOutboundMessageRecord,
         payload: WaRetryPlaintextReplayPayload,
-        requesterJid: string,
-        retryCount: number
+        requesterJid: string
     ): Promise<WaRetryResendResult> {
         const plaintext =
             (await this.maybeWrapGroupRetryPlaintextForSelfDevice(payload, requesterJid)) ??
@@ -118,18 +117,19 @@ export class WaRetryReplayService {
             }
             deviceIdentity = proto.ADVSignedDeviceIdentity.encode(signedIdentity).finish()
         }
-        const publishInput: WaEncryptedMessageInput = {
+
+        const retryNode = buildGroupRetryMessageNode({
             to: payload.to,
-            participant: requesterJid,
+            type: payload.type,
+            id: outbound.messageId,
+            requesterJid,
+            addressingMode: splitJid(requesterJid).server === 'lid' ? 'lid' : 'pn',
             encType: encrypted.type,
             ciphertext: encrypted.ciphertext,
-            encCount: retryCount,
-            id: outbound.messageId,
-            type: payload.type,
             deviceIdentity
-        }
+        })
 
-        await this.messageClient.publishEncrypted(publishInput)
+        await this.messageClient.sendMessageNode(retryNode)
         return 'resent'
     }
 
@@ -145,7 +145,7 @@ export class WaRetryReplayService {
         if (normalizeDeviceJid(payload.to) !== normalizeDeviceJid(requesterJid)) {
             return 'ineligible'
         }
-        await this.messageClient.publishEncrypted({
+        await this.messageClient.sendEncrypted({
             to: requesterJid,
             encType: payload.encType,
             ciphertext: payload.ciphertext,
@@ -176,7 +176,7 @@ export class WaRetryReplayService {
         if (!this.isOpaqueReplayCompatible(replayNode, requesterJid)) {
             return 'ineligible'
         }
-        await this.messageClient.publishNode(replayNode)
+        await this.messageClient.sendMessageNode(replayNode)
         return 'resent'
     }
 

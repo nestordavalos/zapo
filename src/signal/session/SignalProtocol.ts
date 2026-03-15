@@ -39,7 +39,11 @@ export class SignalProtocol {
     }
 
     public async hasSession(address: SignalAddress): Promise<boolean> {
-        return (await this.store.getSession(address)) !== null
+        return this.store.hasSession(address)
+    }
+
+    public async hasSessions(addresses: readonly SignalAddress[]): Promise<readonly boolean[]> {
+        return this.store.hasSessions(addresses)
     }
 
     public async establishOutgoingSession(

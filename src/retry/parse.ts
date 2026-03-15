@@ -54,6 +54,17 @@ function parseRetryCount(value: string | undefined): number {
     return parsed
 }
 
+function parseRetryReason(value: string | undefined): number | undefined {
+    const parsed = parseOptionalInt(value)
+    if (parsed === undefined) {
+        return undefined
+    }
+    if (parsed < 0) {
+        throw new Error('retry reason must be >= 0')
+    }
+    return parsed
+}
+
 function parseRetryKeyBundle(node: BinaryNode | undefined): WaRetryKeyBundle | undefined {
     if (!node) {
         return undefined
@@ -173,6 +184,7 @@ export function parseRetryReceiptRequest(node: BinaryNode): WaParsedRetryRequest
         recipient: node.attrs.recipient,
         originalMsgId,
         retryCount: parseRetryCount(retryNode.attrs.count),
+        retryReason: parseRetryReason(retryNode.attrs.error ?? node.attrs.error),
         t: retryNode.attrs.t ?? node.attrs.t,
         regId: parseBigEndianUint(registration, 'retry.registration'),
         keyBundle: parseRetryKeyBundle(findNodeChild(node, 'keys'))

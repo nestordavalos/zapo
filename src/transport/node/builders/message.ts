@@ -20,7 +20,30 @@ interface BuildGroupSenderKeyMessageNodeInput {
     readonly type: string
     readonly groupCiphertext: Uint8Array
     readonly id?: string
+    readonly phash?: string
+    readonly addressingMode?: 'pn' | 'lid'
     readonly participants: readonly EncryptedParticipant[]
+    readonly deviceIdentity?: Uint8Array
+}
+
+interface BuildGroupDirectMessageNodeInput {
+    readonly to: string
+    readonly type: string
+    readonly id?: string
+    readonly phash?: string
+    readonly addressingMode?: 'pn' | 'lid'
+    readonly participants: readonly EncryptedParticipant[]
+    readonly deviceIdentity?: Uint8Array
+}
+
+interface BuildGroupRetryMessageNodeInput {
+    readonly to: string
+    readonly type: string
+    readonly id: string
+    readonly requesterJid: string
+    readonly addressingMode: 'pn' | 'lid'
+    readonly encType: 'msg' | 'pkmsg'
+    readonly ciphertext: Uint8Array
     readonly deviceIdentity?: Uint8Array
 }
 
@@ -84,6 +107,12 @@ export function buildGroupSenderKeyMessageNode(
     if (input.id) {
         attrs.id = input.id
     }
+    if (input.phash) {
+        attrs.phash = input.phash
+    }
+    if (input.addressingMode) {
+        attrs.addressing_mode = input.addressingMode
+    }
 
     const content: BinaryNode[] = []
     if (input.participants.length > 0) {
@@ -116,6 +145,62 @@ export function buildGroupSenderKeyMessageNode(
         },
         content: input.groupCiphertext
     })
+    if (input.deviceIdentity) {
+        content.push({
+            tag: WA_NODE_TAGS.DEVICE_IDENTITY,
+            attrs: {},
+            content: input.deviceIdentity
+        })
+    }
+
+    return {
+        tag: WA_MESSAGE_TAGS.MESSAGE,
+        attrs,
+        content
+    }
+}
+
+export function buildGroupDirectMessageNode(input: BuildGroupDirectMessageNodeInput): BinaryNode {
+    if (input.participants.length === 0) {
+        throw new Error('group direct message requires at least one participant')
+    }
+
+    const attrs: Record<string, string> = {
+        to: input.to,
+        type: input.type
+    }
+    if (input.id) {
+        attrs.id = input.id
+    }
+    if (input.phash) {
+        attrs.phash = input.phash
+    }
+    if (input.addressingMode) {
+        attrs.addressing_mode = input.addressingMode
+    }
+
+    const content: BinaryNode[] = [
+        {
+            tag: WA_NODE_TAGS.PARTICIPANTS,
+            attrs: {},
+            content: input.participants.map((participant) => ({
+                tag: 'to',
+                attrs: {
+                    jid: participant.jid
+                },
+                content: [
+                    {
+                        tag: WA_MESSAGE_TAGS.ENC,
+                        attrs: {
+                            v: WA_MESSAGE_TYPES.ENC_VERSION,
+                            type: participant.encType
+                        },
+                        content: participant.ciphertext
+                    }
+                ]
+            }))
+        }
+    ]
     if (input.deviceIdentity) {
         content.push({
             tag: WA_NODE_TAGS.DEVICE_IDENTITY,
@@ -260,5 +345,57 @@ export function buildInboundReceiptAckNode(receiptNode: BinaryNode): BinaryNode 
     return {
         tag: WA_MESSAGE_TAGS.ACK,
         attrs
+    }
+}
+
+export function buildGroupRetryMessageNode(input: BuildGroupRetryMessageNodeInput): BinaryNode {
+    const content: BinaryNode[] = [
+        {
+            tag: WA_NODE_TAGS.PARTICIPANTS,
+            attrs: {},
+            content: [
+                {
+                    tag: 'to',
+                    attrs: { jid: input.requesterJid },
+                    content: [
+                        {
+                            tag: WA_MESSAGE_TAGS.ENC,
+                            attrs: {
+                                v: WA_MESSAGE_TYPES.ENC_VERSION,
+                                type: input.encType
+                            },
+                            content: input.ciphertext
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            tag: WA_MESSAGE_TAGS.ENC,
+            attrs: {
+                v: WA_MESSAGE_TYPES.ENC_VERSION,
+                type: 'skmsg'
+            },
+            content: undefined
+        }
+    ]
+    if (input.deviceIdentity) {
+        content.push({
+            tag: WA_NODE_TAGS.DEVICE_IDENTITY,
+            attrs: {},
+            content: input.deviceIdentity
+        })
+    }
+
+    return {
+        tag: WA_MESSAGE_TAGS.MESSAGE,
+        attrs: {
+            to: input.to,
+            type: input.type,
+            id: input.id,
+            device_fanout: 'false',
+            addressing_mode: input.addressingMode
+        },
+        content
     }
 }

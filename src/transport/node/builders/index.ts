@@ -17,6 +17,8 @@ export {
 export { buildMediaConnIq } from '@transport/node/builders/media'
 export {
     buildDirectMessageFanoutNode,
+    buildGroupDirectMessageNode,
+    buildGroupRetryMessageNode,
     buildGroupSenderKeyMessageNode,
     buildInboundDeliveryReceiptNode,
     buildInboundMessageAckNode,

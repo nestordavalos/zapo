@@ -2,22 +2,27 @@ import type {
     WaMessageStore as Contract,
     WaStoredMessageRecord
 } from '@store/contracts/message.store'
+import { resolvePositive } from '@util/coercion'
 import { normalizeQueryLimit } from '@util/collections'
 import { setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 
 const DEFAULT_MESSAGE_MEMORY_STORE_LIMITS = Object.freeze({
     messages: 50_000
 } as const)
 
+export interface WaMessageMemoryStoreOptions {
+    readonly maxMessages?: number
+}
+
 export class WaMessageMemoryStore implements Contract {
     private readonly messages = new Map<string, WaStoredMessageRecord>()
     private readonly maxMessages: number
 
-    public constructor() {
-        this.maxMessages = readPositiveLimit(
-            'WA_MESSAGES_MEMORY_STORE_MAX_MESSAGES',
-            DEFAULT_MESSAGE_MEMORY_STORE_LIMITS.messages
+    public constructor(options: WaMessageMemoryStoreOptions = {}) {
+        this.maxMessages = resolvePositive(
+            options.maxMessages,
+            DEFAULT_MESSAGE_MEMORY_STORE_LIMITS.messages,
+            'WaMessageMemoryStoreOptions.maxMessages'
         )
     }
 

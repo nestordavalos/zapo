@@ -197,9 +197,6 @@ export class WaWebSocket {
         if (!socket || socket.readyState !== WA_READY_STATES.OPEN) {
             throw new Error('websocket is not connected')
         }
-        this.logger.trace('socket send', {
-            payloadType: typeof data === 'string' ? 'string' : 'binary'
-        })
         socket.send(data)
     }
 
@@ -298,7 +295,6 @@ export class WaWebSocket {
                 this.logger.trace('socket message ignored: unsupported payload shape')
                 return
             }
-            this.logger.trace('socket message received', { byteLength: payload.byteLength })
             await this.handlers.onMessage?.(payload)
         } catch (error) {
             this.logger.error('socket message handling failed', {

@@ -14,11 +14,22 @@ import type { WaSenderKeyStore as WaSenderKeyStoreContract } from '@store/contra
 import { BaseSqliteStore } from '@store/providers/sqlite/BaseSqliteStore'
 import type { WaSqliteConnection } from '@store/providers/sqlite/connection'
 import type { WaSqliteStorageOptions } from '@store/types'
-import { asNumber, asString } from '@util/coercion'
+import { asNumber, asString, resolvePositive } from '@util/coercion'
+
+const DEFAULTS = Object.freeze({
+    distributionBatchSize: 250
+} as const)
 
 export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKeyStoreContract {
-    public constructor(options: WaSqliteStorageOptions) {
+    private readonly distributionBatchSize: number
+
+    public constructor(options: WaSqliteStorageOptions, distributionBatchSize?: number) {
         super(options, ['senderKey'])
+        this.distributionBatchSize = resolvePositive(
+            distributionBatchSize,
+            DEFAULTS.distributionBatchSize,
+            'senderKey.sqlite.distributionBatchSize'
+        )
     }
 
     public async upsertSenderKey(record: SenderKeyRecord): Promise<void> {
@@ -49,29 +60,21 @@ export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKey
     public async upsertSenderKeyDistribution(record: SenderKeyDistributionRecord): Promise<void> {
         const db = await this.getConnection()
         const sender = toSignalAddressParts(record.sender)
-        db.run(
-            `INSERT INTO sender_key_distribution (
-                session_id,
-                group_id,
-                sender_user,
-                sender_server,
-                sender_device,
-                key_id,
-                timestamp_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, group_id, sender_user, sender_server, sender_device) DO UPDATE SET
-                key_id=excluded.key_id,
-                timestamp_ms=excluded.timestamp_ms`,
-            [
-                this.options.sessionId,
-                record.groupId,
-                sender.user,
-                sender.server,
-                sender.device,
-                record.keyId,
-                record.timestampMs
-            ]
-        )
+        this.upsertSenderKeyDistributionRow(db, record, sender)
+    }
+
+    public async upsertSenderKeyDistributions(
+        records: readonly SenderKeyDistributionRecord[]
+    ): Promise<void> {
+        if (records.length === 0) {
+            return
+        }
+        await this.withTransaction((db) => {
+            for (const record of records) {
+                const sender = toSignalAddressParts(record.sender)
+                this.upsertSenderKeyDistributionRow(db, record, sender)
+            }
+        })
     }
 
     public async getGroupSenderKeyList(groupId: string): Promise<{
@@ -149,6 +152,43 @@ export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKey
         return row ? decodeSenderKeyDistributionRow(row) : null
     }
 
+    public async getDeviceSenderKeyDistributions(
+        groupId: string,
+        senders: readonly SignalAddress[]
+    ): Promise<readonly (SenderKeyDistributionRecord | null)[]> {
+        if (senders.length === 0) {
+            return []
+        }
+        const db = await this.getConnection()
+        const targets = senders.map((sender) => toSignalAddressParts(sender))
+        const map = new Map<string, SenderKeyDistributionRecord>()
+        for (let start = 0; start < targets.length; start += this.distributionBatchSize) {
+            const batch = targets.slice(start, start + this.distributionBatchSize)
+            const filters = batch
+                .map(() => '(sender_user = ? AND sender_server = ? AND sender_device = ?)')
+                .join(' OR ')
+            const params: unknown[] = [this.options.sessionId, groupId]
+            for (const target of batch) {
+                params.push(target.user, target.server, target.device)
+            }
+            const rows = db.all<SenderKeyDistributionRow>(
+                `SELECT group_id, sender_user, sender_server, sender_device, key_id, timestamp_ms
+                 FROM sender_key_distribution
+                 WHERE session_id = ? AND group_id = ? AND (${filters})`,
+                params
+            )
+            for (const row of rows) {
+                map.set(this.distributionRowKey(row), decodeSenderKeyDistributionRow(row))
+            }
+        }
+        return targets.map((target) => {
+            return (
+                map.get(this.distributionTargetKey(target.user, target.server, target.device)) ??
+                null
+            )
+        })
+    }
+
     public async deleteDeviceSenderKey(target: SignalAddress, groupId?: string): Promise<number> {
         const sender = toSignalAddressParts(target)
         return this.withTransaction((db) => {
@@ -213,5 +253,47 @@ export class SenderKeySqliteStore extends BaseSqliteStore implements WaSenderKey
                 : [this.options.sessionId, target.user, target.server, target.device]
         )
         return count
+    }
+
+    private upsertSenderKeyDistributionRow(
+        db: WaSqliteConnection,
+        record: SenderKeyDistributionRecord,
+        sender: SignalAddressParts
+    ): void {
+        db.run(
+            `INSERT INTO sender_key_distribution (
+                session_id,
+                group_id,
+                sender_user,
+                sender_server,
+                sender_device,
+                key_id,
+                timestamp_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, group_id, sender_user, sender_server, sender_device) DO UPDATE SET
+                key_id=excluded.key_id,
+                timestamp_ms=excluded.timestamp_ms`,
+            [
+                this.options.sessionId,
+                record.groupId,
+                sender.user,
+                sender.server,
+                sender.device,
+                record.keyId,
+                record.timestampMs
+            ]
+        )
+    }
+
+    private distributionRowKey(row: SenderKeyDistributionRow): string {
+        return this.distributionTargetKey(
+            asString(row.sender_user, 'sender_key_distribution.sender_user'),
+            asString(row.sender_server, 'sender_key_distribution.sender_server'),
+            asNumber(row.sender_device, 'sender_key_distribution.sender_device')
+        )
+    }
+
+    private distributionTargetKey(user: string, server: string, device: number): string {
+        return `${user}|${server}|${device}`
     }
 }

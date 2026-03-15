@@ -148,7 +148,6 @@ export class WaNoiseSession {
         if (!this.noiseSocket || !this.frameCodec) {
             throw new Error('noise session is not established')
         }
-        this.logger.trace('noise encrypt frame', { byteLength: frame.byteLength })
         const encrypted = await this.writeQueue.enqueue(() => this.noiseSocket!.encrypt(frame))
         return this.frameCodec.encodeFrame(encrypted)
     }
@@ -158,7 +157,6 @@ export class WaNoiseSession {
         if (!codec) {
             return []
         }
-        this.logger.trace('noise push wire chunk', { byteLength: chunk.byteLength })
 
         const out: Uint8Array[] = []
         if (this.pendingDecryptedFrames.length > 0) {

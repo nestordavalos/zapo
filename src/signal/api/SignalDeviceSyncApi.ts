@@ -68,14 +68,12 @@ export class SignalDeviceSyncApi {
         const parsed = this.parseDeviceSyncResponse(response, usersToQuery)
         if (this.deviceListStore) {
             const updatedAtMs = Date.now()
-            await Promise.all(
-                parsed.map((entry) =>
-                    this.deviceListStore!.upsertUserDevices({
-                        userJid: entry.jid,
-                        deviceJids: entry.deviceJids,
-                        updatedAtMs
-                    })
-                )
+            await this.deviceListStore.upsertUserDevicesBatch(
+                parsed.map((entry) => ({
+                    userJid: entry.jid,
+                    deviceJids: entry.deviceJids,
+                    updatedAtMs
+                }))
             )
         }
         const parsedByUser = new Map<string, readonly string[]>(
@@ -102,9 +100,7 @@ export class SignalDeviceSyncApi {
         cachedByUser: Map<string, readonly string[]>,
         store: WaDeviceListStore
     ): Promise<readonly string[]> {
-        const records = await Promise.all(
-            normalizedUsers.map((jid) => store.getUserDevices(jid, nowMs))
-        )
+        const records = await store.getUserDevicesBatch(normalizedUsers, nowMs)
         const usersToQuery: string[] = []
         for (let index = 0; index < normalizedUsers.length; index += 1) {
             const userJid = normalizedUsers[index]

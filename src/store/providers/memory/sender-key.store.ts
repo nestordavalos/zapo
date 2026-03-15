@@ -1,7 +1,7 @@
 import type { SenderKeyDistributionRecord, SenderKeyRecord, SignalAddress } from '@signal/types'
 import type { WaSenderKeyStore as WaSenderKeyStoreContract } from '@store/contracts/sender-key.store'
+import { resolvePositive } from '@util/coercion'
 import { setBoundedMapEntry } from '@util/collections'
-import { readPositiveLimit } from '@util/env'
 import { signalAddressKey } from '@util/signal-address'
 
 const DEFAULT_SENDER_KEY_STORE_LIMITS = Object.freeze({
@@ -9,22 +9,29 @@ const DEFAULT_SENDER_KEY_STORE_LIMITS = Object.freeze({
     senderDistributions: 8_192
 })
 
+export interface WaSenderKeyMemoryStoreOptions {
+    readonly maxSenderKeys?: number
+    readonly maxSenderDistributions?: number
+}
+
 export class SenderKeyMemoryStore implements WaSenderKeyStoreContract {
     private readonly senderKeys: Map<string, SenderKeyRecord>
     private readonly senderDistributions: Map<string, SenderKeyDistributionRecord>
     private readonly maxSenderKeys: number
     private readonly maxSenderDistributions: number
 
-    public constructor() {
+    public constructor(options: WaSenderKeyMemoryStoreOptions = {}) {
         this.senderKeys = new Map()
         this.senderDistributions = new Map()
-        this.maxSenderKeys = readPositiveLimit(
-            'WA_SENDER_KEY_MEMORY_STORE_MAX_KEYS',
-            DEFAULT_SENDER_KEY_STORE_LIMITS.senderKeys
+        this.maxSenderKeys = resolvePositive(
+            options.maxSenderKeys,
+            DEFAULT_SENDER_KEY_STORE_LIMITS.senderKeys,
+            'WaSenderKeyMemoryStoreOptions.maxSenderKeys'
         )
-        this.maxSenderDistributions = readPositiveLimit(
-            'WA_SENDER_KEY_MEMORY_STORE_MAX_DISTRIBUTIONS',
-            DEFAULT_SENDER_KEY_STORE_LIMITS.senderDistributions
+        this.maxSenderDistributions = resolvePositive(
+            options.maxSenderDistributions,
+            DEFAULT_SENDER_KEY_STORE_LIMITS.senderDistributions,
+            'WaSenderKeyMemoryStoreOptions.maxSenderDistributions'
         )
     }
 
@@ -44,6 +51,19 @@ export class SenderKeyMemoryStore implements WaSenderKeyStoreContract {
             record,
             this.maxSenderDistributions
         )
+    }
+
+    public async upsertSenderKeyDistributions(
+        records: readonly SenderKeyDistributionRecord[]
+    ): Promise<void> {
+        for (const record of records) {
+            setBoundedMapEntry(
+                this.senderDistributions,
+                this.makeKey(record.groupId, record.sender),
+                record,
+                this.maxSenderDistributions
+            )
+        }
     }
 
     public async getGroupSenderKeyList(groupId: string): Promise<{
@@ -85,6 +105,15 @@ export class SenderKeyMemoryStore implements WaSenderKeyStoreContract {
     ): Promise<SenderKeyDistributionRecord | null> {
         const record = this.senderDistributions.get(this.makeKey(groupId, sender))
         return record ?? null
+    }
+
+    public async getDeviceSenderKeyDistributions(
+        groupId: string,
+        senders: readonly SignalAddress[]
+    ): Promise<readonly (SenderKeyDistributionRecord | null)[]> {
+        return senders.map(
+            (sender) => this.senderDistributions.get(this.makeKey(groupId, sender)) ?? null
+        )
     }
 
     public async deleteDeviceSenderKey(target: SignalAddress, groupId?: string): Promise<number> {
