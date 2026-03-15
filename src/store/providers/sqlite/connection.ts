@@ -84,7 +84,8 @@ function statementFor(db: SqliteDatabaseLike, sql: string): SqliteStatementLike 
 
 function wrapConnection(
     db: SqliteDatabaseLike,
-    driver: Exclude<WaSqliteDriver, 'auto'>
+    driver: Exclude<WaSqliteDriver, 'auto'>,
+    onClose?: () => void
 ): WaSqliteConnection {
     const statementCache = new Map<string, SqliteStatementLike>()
     const cachedStatementFor = (sql: string): SqliteStatementLike => {
@@ -125,7 +126,11 @@ function wrapConnection(
         },
         close() {
             statementCache.clear()
-            db.close()
+            try {
+                db.close()
+            } finally {
+                onClose?.()
+            }
         }
     }
 }
@@ -201,38 +206,69 @@ function applyPragmas(db: SqliteDatabaseLike, options: WaSqliteStorageOptions): 
     }
 }
 
-async function openBetterSqlite(options: WaSqliteStorageOptions): Promise<WaSqliteConnection> {
+function closeDatabaseSafely(db: SqliteDatabaseLike): void {
     try {
-        const loaded = await import(BETTER_SQLITE3_MODULE)
-        const Database = asConstructor(loaded)
-        const db = new Database(options.path)
-        applyPragmas(db, options)
-        return wrapConnection(db, 'better-sqlite3')
+        db.close()
+    } catch {
+        return
+    }
+}
+
+async function openBetterSqlite(
+    options: WaSqliteStorageOptions,
+    onClose: () => void
+): Promise<WaSqliteConnection> {
+    let loaded: unknown
+    try {
+        loaded = await import(BETTER_SQLITE3_MODULE)
     } catch {
         throw new Error(
             'optional dependency "better-sqlite3" is not installed. Install with: npm i better-sqlite3'
         )
     }
+
+    const Database = asConstructor(loaded)
+    const db = new Database(options.path)
+    try {
+        applyPragmas(db, options)
+    } catch (error) {
+        closeDatabaseSafely(db)
+        throw error
+    }
+
+    return wrapConnection(db, 'better-sqlite3', onClose)
 }
 
-async function openBunSqlite(options: WaSqliteStorageOptions): Promise<WaSqliteConnection> {
+async function openBunSqlite(
+    options: WaSqliteStorageOptions,
+    onClose: () => void
+): Promise<WaSqliteConnection> {
+    let loaded: unknown
     try {
-        const loaded = await import(BUN_SQLITE_MODULE)
-        if (!loaded || typeof loaded !== 'object') {
-            throw new Error('invalid bun sqlite module export')
-        }
-        const ctor = (loaded as { Database?: unknown }).Database
-        if (typeof ctor !== 'function') {
-            throw new Error('invalid bun sqlite module export')
-        }
-        const db = new (ctor as new (path: string) => SqliteDatabaseLike)(options.path)
-        applyPragmas(db, options)
-        return wrapConnection(db, 'bun')
+        loaded = await import(BUN_SQLITE_MODULE)
     } catch {
         throw new Error(
             'bun runtime sqlite module "bun:sqlite" is unavailable. Run this in Bun or set storage.sqlite.driver to "better-sqlite3".'
         )
     }
+
+    if (!loaded || typeof loaded !== 'object') {
+        throw new Error('invalid bun sqlite module export')
+    }
+    const ctor = (loaded as { Database?: unknown }).Database
+    if (typeof ctor !== 'function') {
+        throw new Error('invalid bun sqlite module export')
+    }
+
+    const db = new (ctor as new (path: string) => SqliteDatabaseLike)(options.path)
+    try {
+        applyPragmas(db, options)
+    } catch (error) {
+        closeDatabaseSafely(db)
+        throw error
+    }
+
+    return wrapConnection(db, 'bun', onClose)
 }
 
 function resolveDriver(requested: WaSqliteDriver | undefined): WaSqliteDriver {
@@ -260,8 +296,13 @@ export async function openSqliteConnection(
         return cached
     }
 
+    const onClose = (): void => {
+        SQLITE_CONNECTION_CACHE.delete(cacheKey)
+    }
     const created =
-        driver === 'bun' ? openBunSqlite(normalizedOptions) : openBetterSqlite(normalizedOptions)
+        driver === 'bun'
+            ? openBunSqlite(normalizedOptions, onClose)
+            : openBetterSqlite(normalizedOptions, onClose)
     const guarded = created.catch((error) => {
         SQLITE_CONNECTION_CACHE.delete(cacheKey)
         throw error

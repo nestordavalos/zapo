@@ -194,7 +194,10 @@ export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
 
 export function toBytesView(value: Uint8Array | ArrayBuffer | ArrayBufferView): Uint8Array {
     if (value instanceof Uint8Array) {
-        return value
+        if (value.constructor === Uint8Array) {
+            return value
+        }
+        return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
     }
     if (ArrayBuffer.isView(value)) {
         return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)

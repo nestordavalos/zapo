@@ -77,9 +77,14 @@
     "files": [
         "dist",
         "proto/index.js",
-        "proto/index.d.ts"
+        "proto/index.d.ts",
+        "scripts/check-node-version.cjs"
     ],
+    "engines": {
+        "node": ">=20.9.0"
+    },
     "scripts": {
+        "preinstall": "node ./scripts/check-node-version.cjs",
         "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
         "build:cjs": "tsc -p tsconfig.build.cjs.json && tsc-alias -p tsconfig.build.cjs.json",
         "build:esm": "tsc -p tsconfig.build.esm.json && tsc-alias -p tsconfig.build.esm.json",
@@ -88,6 +93,13 @@
         "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:esm:finalize",
         "proto:generate": "node ./scripts/generate-proto.cjs",
         "example": "tsx examples/example.ts",
+        "test:structure": "node ./scripts/check-tests-structure.cjs",
+        "test": "npm run test:structure && node --import tsx --test --test-skip-pattern \"\\\\[flow\\\\]\" \"src/**/__tests__/**/*.test.ts\"",
+        "test:watch": "node --import tsx --test --watch --test-skip-pattern \"\\\\[flow\\\\]\" \"src/**/__tests__/**/*.test.ts\"",
+        "test:flow": "node --import tsx --test --test-concurrency=1 \"src/**/__tests__/**/*.flow.test.ts\"",
+        "test:flow:watch": "node --import tsx --test --watch --test-concurrency=1 \"src/**/__tests__/**/*.flow.test.ts\"",
+        "test:coverage": "npm run test:structure && c8 --all --include \"src/**/*.ts\" --exclude \"src/**/*.d.ts\" --exclude \"src/**/__tests__/**\" --exclude \"src/**/types.ts\" --exclude \"src/store/contracts/**/*.ts\" --reporter text --reporter html --reporter lcov node --import tsx --test --test-skip-pattern \"\\\\[flow\\\\]\" \"src/**/__tests__/**/*.test.ts\"",
+        "test:coverage:open": "node -e \"require('node:child_process').execSync(process.platform === 'win32' ? 'start coverage\\\\index.html' : process.platform === 'darwin' ? 'open coverage/index.html' : 'xdg-open coverage/index.html', { stdio: 'inherit' })\"",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "lint": "eslint \"src/**/*.{ts,js}\"",
         "lint:fix": "eslint \"src/**/*.{ts,js}\" --fix",
@@ -118,6 +130,7 @@
         "@typescript-eslint/parser": "^8.56.1",
         "@vinikjkkj/eslint-config": "^1.0.0",
         "better-sqlite3": "^12.6.2",
+        "c8": "^11.0.0",
         "eslint": "^9.39.4",
         "eslint-plugin-import": "^2.32.0",
         "pino": "^10.3.1",
