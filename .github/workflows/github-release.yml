@@ -13,8 +13,36 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            - name: create github release with generated notes
+            - name: checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: build release notes from commits
+              shell: bash
+              run: |
+                  current_tag="${GITHUB_REF_NAME}"
+                  previous_tag="$(git describe --tags --abbrev=0 "${current_tag}^" 2>/dev/null || true)"
+
+                  {
+                      echo "## what's changed"
+                      echo
+
+                      if [ -n "${previous_tag}" ]; then
+                          git log "${previous_tag}..${current_tag}" --pretty=format:'- %s (%h)'
+                          echo
+                          echo
+                          echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${current_tag}"
+                      else
+                          git log "${current_tag}" --pretty=format:'- %s (%h)'
+                          echo
+                          echo
+                          echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/commits/${current_tag}"
+                      fi
+                  } > RELEASE_NOTES.md
+
+            - name: create github release
               uses: softprops/action-gh-release@v2
               with:
-                  generate_release_notes: true
+                  body_path: RELEASE_NOTES.md
                   prerelease: ${{ contains(github.ref_name, '-') }}
