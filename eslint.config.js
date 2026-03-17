@@ -12,7 +12,7 @@ module.exports = [
     },
     ...base,
     {
-        files: ['examples/**/*.{ts,js}', 'scripts/**/*.{ts,js}'],
+        files: ['examples/**/*.{ts,js}', 'scripts/**/*.{ts,js}', '/src/**/*.{ts,js}'],
         languageOptions: {
             parserOptions: {
                 project: false

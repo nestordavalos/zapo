@@ -1,44 +1,24 @@
-import { WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import { WA_DEFAULTS, WA_NODE_TAGS, WA_USYNC_CONTEXTS, WA_XMLNS } from '@protocol/constants'
+import { buildUsyncIq } from '@transport/node/builders/usync'
 import { buildIqNode } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
 export function buildAccountDevicesSyncIq(userJids: readonly string[], sid: string): BinaryNode {
-    return buildIqNode('get', WA_DEFAULTS.HOST_DOMAIN, WA_XMLNS.USYNC, [
-        {
-            tag: WA_NODE_TAGS.USYNC,
-            attrs: {
-                sid,
-                index: '0',
-                last: 'true',
-                mode: WA_NODE_TAGS.QUERY,
-                context: WA_NODE_TAGS.NOTIFICATION
-            },
-            content: [
-                {
-                    tag: WA_NODE_TAGS.QUERY,
-                    attrs: {},
-                    content: [
-                        {
-                            tag: WA_NODE_TAGS.DEVICES,
-                            attrs: {
-                                version: '2'
-                            }
-                        }
-                    ]
-                },
-                {
-                    tag: WA_NODE_TAGS.LIST,
-                    attrs: {},
-                    content: userJids.map((jid) => ({
-                        tag: WA_NODE_TAGS.USER,
-                        attrs: {
-                            jid
-                        }
-                    }))
+    return buildUsyncIq({
+        sid,
+        context: WA_USYNC_CONTEXTS.NOTIFICATION,
+        queryProtocolNodes: [
+            {
+                tag: WA_NODE_TAGS.DEVICES,
+                attrs: {
+                    version: '2'
                 }
-            ]
-        }
-    ])
+            }
+        ],
+        users: userJids.map((jid) => ({
+            jid
+        }))
+    })
 }
 
 export function buildAccountPictureSyncIq(meJid: string): BinaryNode {

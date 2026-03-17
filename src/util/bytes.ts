@@ -3,6 +3,7 @@ import type { Readable } from 'node:stream'
 
 export const TEXT_ENCODER = new TextEncoder()
 export const TEXT_DECODER = new TextDecoder()
+export const ZERO_BYTES: Readonly<Uint8Array> = new Uint8Array([0])
 export const EMPTY_BYTES = Object.freeze(new Uint8Array(0))
 
 const HEX_CHARS = '0123456789abcdef'

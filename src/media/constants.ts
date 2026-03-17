@@ -1,4 +1,7 @@
-export const DEFAULT_MEDIA_HOSTS = ['mmg.whatsapp.net', 'mmg-fallback.whatsapp.net'] as const
+export const DEFAULT_MEDIA_HOSTS = Object.freeze([
+    'mmg.whatsapp.net',
+    'mmg-fallback.whatsapp.net'
+] as const)
 export const MEDIA_CONN_CACHE_GRACE_MS = 30_000
 
 export const MEDIA_HKDF_SIZE = 112

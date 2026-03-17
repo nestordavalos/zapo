@@ -1,8 +1,6 @@
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_SIGNALING, WA_XMLNS } from '@protocol/constants'
 import type { BinaryNode } from '@transport/types'
-
-const ZERO_BYTE = new Uint8Array([0])
-const NOTIFICATION_CLASS = WA_NODE_TAGS.NOTIFICATION
+import { ZERO_BYTES } from '@util/bytes'
 
 export function buildCompanionHelloRequestNode(args: {
     readonly phoneJid: string
@@ -53,7 +51,7 @@ export function buildCompanionHelloRequestNode(args: {
                     {
                         tag: 'link_code_pairing_nonce',
                         attrs: {},
-                        content: ZERO_BYTE
+                        content: ZERO_BYTES
                     }
                 ]
             }
@@ -125,8 +123,8 @@ export function buildCompanionFinishRequestNode(args: {
 export function buildNotificationAckNode(node: BinaryNode, typeOverride?: string): BinaryNode {
     const attrs: Record<string, string> = {
         to: node.attrs.from ?? WA_DEFAULTS.HOST_DOMAIN,
-        class: NOTIFICATION_CLASS,
-        type: typeOverride ?? node.attrs.type ?? NOTIFICATION_CLASS
+        class: WA_NODE_TAGS.NOTIFICATION,
+        type: typeOverride ?? node.attrs.type ?? WA_NODE_TAGS.NOTIFICATION
     }
     if (node.attrs.id) {
         attrs.id = node.attrs.id

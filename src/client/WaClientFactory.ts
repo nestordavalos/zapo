@@ -37,6 +37,7 @@ import { SignalSessionSyncApi } from '@signal/api/SignalSessionSyncApi'
 import { SenderKeyManager } from '@signal/group/SenderKeyManager'
 import { SignalProtocol } from '@signal/session/SignalProtocol'
 import { WaKeepAlive } from '@transport/keepalive/WaKeepAlive'
+import { createUsyncSidGenerator, type WaUsyncSidGenerator } from '@transport/node/usync'
 import { WaNodeOrchestrator } from '@transport/node/WaNodeOrchestrator'
 import { WaNodeTransport } from '@transport/node/WaNodeTransport'
 import type { BinaryNode } from '@transport/types'
@@ -227,15 +228,17 @@ function createHandleClientDirtyBits(input: {
     readonly logger: Logger
     readonly host: WaClientDependencyHost
     readonly getCurrentCredentials: () => ReturnType<WaAuthClient['getCurrentCredentials']>
+    readonly generateUsyncSid: WaUsyncSidGenerator
 }): (dirtyBits: Parameters<typeof handleDirtyBits>[1]) => Promise<void> {
-    const { logger, host, getCurrentCredentials } = input
+    const { logger, host, getCurrentCredentials, generateUsyncSid } = input
     return (dirtyBits) =>
         handleDirtyBits(
             {
                 logger,
                 queryWithContext: host.queryWithContext,
                 getCurrentCredentials,
-                syncAppState: host.syncAppState
+                syncAppState: host.syncAppState,
+                generateUsyncSid
             },
             dirtyBits
         )
@@ -392,11 +395,13 @@ export function buildWaClientDependencies(input: {
         signalStore: sessionStore.signal,
         defaultTimeoutMs: options.signalFetchKeyBundlesTimeoutMs
     })
+    const generateUsyncSid = createUsyncSidGenerator()
     const signalDeviceSync = new SignalDeviceSyncApi({
         logger,
         query: host.query,
         deviceListStore: sessionStore.deviceList,
-        defaultTimeoutMs: options.signalFetchKeyBundlesTimeoutMs
+        defaultTimeoutMs: options.signalFetchKeyBundlesTimeoutMs,
+        generateSid: generateUsyncSid
     })
     const signalIdentitySync = new SignalIdentitySyncApi({
         logger,
@@ -490,7 +495,8 @@ export function buildWaClientDependencies(input: {
     const handleClientDirtyBits = createHandleClientDirtyBits({
         logger,
         host,
-        getCurrentCredentials
+        getCurrentCredentials,
+        generateUsyncSid
     })
     const incomingNode = new WaIncomingNodeCoordinator({
         logger,

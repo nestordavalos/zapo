@@ -1,11 +1,11 @@
-import { randomInt } from 'node:crypto'
-
 import type { Logger } from '@infra/log/types'
-import { WA_DEFAULTS, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import { WA_DEFAULTS, WA_NODE_TAGS, WA_USYNC_CONTEXTS } from '@protocol/constants'
 import { parseSignalAddressFromJid, splitJid } from '@protocol/jid'
 import type { WaDeviceListStore } from '@store/contracts/device-list.store'
+import { buildUsyncIq } from '@transport/node/builders/usync'
 import { findNodeChild, getNodeChildrenByTag } from '@transport/node/helpers'
-import { assertIqResult, buildIqNode } from '@transport/node/query'
+import { assertIqResult } from '@transport/node/query'
+import { createUsyncSidGenerator, type WaUsyncSidGenerator } from '@transport/node/usync'
 import type { BinaryNode } from '@transport/types'
 
 interface SignalDeviceSyncApiOptions {
@@ -14,6 +14,7 @@ interface SignalDeviceSyncApiOptions {
     readonly deviceListStore?: WaDeviceListStore
     readonly defaultTimeoutMs?: number
     readonly hostDomain?: string
+    readonly generateSid?: WaUsyncSidGenerator
 }
 
 export class SignalDeviceSyncApi {
@@ -22,6 +23,7 @@ export class SignalDeviceSyncApi {
     private readonly deviceListStore?: WaDeviceListStore
     private readonly defaultTimeoutMs: number
     private readonly hostDomain: string
+    private readonly generateSid: WaUsyncSidGenerator
 
     public constructor(options: SignalDeviceSyncApiOptions) {
         this.logger = options.logger
@@ -30,6 +32,7 @@ export class SignalDeviceSyncApi {
         this.defaultTimeoutMs =
             options.defaultTimeoutMs ?? WA_DEFAULTS.SIGNAL_FETCH_KEY_BUNDLES_TIMEOUT_MS
         this.hostDomain = options.hostDomain ?? WA_DEFAULTS.HOST_DOMAIN
+        this.generateSid = options.generateSid ?? createUsyncSidGenerator()
     }
 
     public async syncDeviceList(
@@ -59,7 +62,8 @@ export class SignalDeviceSyncApi {
             }))
         }
 
-        const request = this.makeDeviceSyncRequest(usersToQuery)
+        const sid = await this.generateSid()
+        const request = this.makeDeviceSyncRequest(usersToQuery, sid)
         this.logger.debug('signal device sync request', {
             users: usersToQuery.length,
             timeoutMs
@@ -110,41 +114,23 @@ export class SignalDeviceSyncApi {
         return usersToQuery
     }
 
-    private makeDeviceSyncRequest(userJids: readonly string[]): BinaryNode {
-        return buildIqNode('get', this.hostDomain, WA_XMLNS.USYNC, [
-            {
-                tag: WA_NODE_TAGS.USYNC,
-                attrs: {
-                    sid: this.makeSid(),
-                    index: '0',
-                    last: 'true',
-                    mode: WA_NODE_TAGS.QUERY,
-                    context: 'interactive'
-                },
-                content: [
-                    {
-                        tag: WA_NODE_TAGS.QUERY,
-                        attrs: {},
-                        content: [
-                            {
-                                tag: WA_NODE_TAGS.DEVICES,
-                                attrs: {
-                                    version: '2'
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        tag: WA_NODE_TAGS.LIST,
-                        attrs: {},
-                        content: userJids.map((jid) => ({
-                            tag: WA_NODE_TAGS.USER,
-                            attrs: { jid }
-                        }))
+    private makeDeviceSyncRequest(userJids: readonly string[], sid: string): BinaryNode {
+        return buildUsyncIq({
+            sid,
+            hostDomain: this.hostDomain,
+            context: WA_USYNC_CONTEXTS.INTERACTIVE,
+            queryProtocolNodes: [
+                {
+                    tag: WA_NODE_TAGS.DEVICES,
+                    attrs: {
+                        version: '2'
                     }
-                ]
-            }
-        ])
+                }
+            ],
+            users: userJids.map((jid) => ({
+                jid
+            }))
+        })
     }
 
     private parseDeviceSyncResponse(
@@ -233,9 +219,5 @@ export class SignalDeviceSyncApi {
             return `${parsed.user}@${parsed.server}`
         }
         return `${parsed.user}:${deviceId}@${parsed.server}`
-    }
-
-    private makeSid(): string {
-        return `${Date.now()}.${randomInt(1_000_000)}`
     }
 }

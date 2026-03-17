@@ -1,5 +1,4 @@
 import type { WaAuthCredentials } from '@auth/types'
-import { randomBytesAsync } from '@crypto'
 import type { Logger } from '@infra/log/types'
 import {
     WA_ACCOUNT_SYNC_PROTOCOLS,
@@ -18,11 +17,10 @@ import {
     buildClearDirtyBitsIq,
     buildGroupsDirtySyncIq,
     buildNewsletterMetadataSyncIq
-} from '@transport/node/builders/accountSync'
+} from '@transport/node/builders/account-sync'
 import { getNodeChildren } from '@transport/node/helpers'
 import { assertIqResult, parseIqError } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
-import { bytesToHex } from '@util/bytes'
 import { toError } from '@util/primitives'
 
 export interface WaDirtyBit {
@@ -41,6 +39,7 @@ interface WaDirtySyncRuntime {
     ) => Promise<BinaryNode>
     readonly getCurrentCredentials: () => WaAuthCredentials | null
     readonly syncAppState: () => Promise<void>
+    readonly generateUsyncSid: () => Promise<string>
 }
 
 const SUPPORTED_DIRTY_TYPES = new Set<string>(WA_SUPPORTED_DIRTY_TYPES)
@@ -222,7 +221,7 @@ async function syncAccountDevicesDirtyBit(runtime: WaDirtySyncRuntime): Promise<
 
     await runSyncQuery(runtime, {
         queryContext: 'account_sync.devices',
-        node: buildAccountDevicesSyncIq(userJids, await generateUsyncSid()),
+        node: buildAccountDevicesSyncIq(userJids, await runtime.generateUsyncSid()),
         logMessage: 'account_sync devices synchronized',
         contextData: { meJid, targets: userJids.join(',') }
     })
@@ -306,10 +305,6 @@ async function syncNewsletterMetadataDirtyBit(runtime: WaDirtySyncRuntime): Prom
         buildNewsletterMetadataSyncIq(),
         WA_DEFAULTS.IQ_TIMEOUT_MS
     )
-}
-
-async function generateUsyncSid(): Promise<string> {
-    return bytesToHex(await randomBytesAsync(8))
 }
 
 function resolveAccountSyncDeviceTargets(credentials: WaAuthCredentials | null): readonly string[] {

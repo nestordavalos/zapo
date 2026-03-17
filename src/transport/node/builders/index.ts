@@ -6,7 +6,7 @@ export {
     buildClearDirtyBitsIq,
     buildGroupsDirtySyncIq,
     buildNewsletterMetadataSyncIq
-} from '@transport/node/builders/accountSync'
+} from '@transport/node/builders/account-sync'
 export {
     buildCompanionFinishRequestNode,
     buildCompanionHelloRequestNode,
@@ -37,3 +37,11 @@ export {
     buildGroupParticipantChangeIq,
     buildLeaveGroupIq
 } from '@transport/node/builders/group'
+export {
+    buildUsyncIq,
+    buildUsyncUserNode,
+    type BuildUsyncIqInput,
+    type BuildUsyncUserNodeInput,
+    type WaUsyncContext,
+    type WaUsyncMode
+} from '@transport/node/builders/usync'

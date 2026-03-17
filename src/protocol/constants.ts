@@ -26,3 +26,4 @@ export {
 export { WA_GROUP_NOTIFICATION_TAGS, WA_NOTIFICATION_TYPES } from '@protocol/notification'
 export { WA_DEFAULTS } from '@protocol/defaults'
 export { WA_GROUP_PARTICIPANT_TYPES, type WaGroupSetting } from '@protocol/group'
+export { WA_USYNC_CONTEXTS, WA_USYNC_DEFAULTS, WA_USYNC_MODES } from '@protocol/usync'

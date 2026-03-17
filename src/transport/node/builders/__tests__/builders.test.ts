@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { WA_DEFAULTS, WA_NODE_TAGS } from '@protocol/constants'
+import { WA_DEFAULTS, WA_NODE_TAGS, WA_USYNC_CONTEXTS, WA_USYNC_MODES } from '@protocol/constants'
 import {
     buildAccountBlocklistSyncIq,
     buildAccountDevicesSyncIq,
@@ -23,7 +23,9 @@ import {
     buildLeaveGroupIq,
     buildNewsletterMetadataSyncIq,
     buildNotificationAckNode,
-    buildSignedPreKeyRotateIq
+    buildSignedPreKeyRotateIq,
+    buildUsyncIq,
+    buildUsyncUserNode
 } from '@transport/node/builders'
 import {
     buildDirectMessageFanoutNode,
@@ -40,6 +42,85 @@ test('builders barrel exports stable constructors', () => {
     assert.equal(typeof buildCompanionHelloRequestNode, 'function')
     assert.equal(typeof buildGroupSenderKeyMessageNode, 'function')
     assert.equal(typeof buildSignedPreKeyRotateIq, 'function')
+    assert.equal(typeof buildUsyncIq, 'function')
+    assert.equal(typeof buildUsyncUserNode, 'function')
+})
+
+test('usync builder composes query/list nodes with defaults and overrides', () => {
+    const customUserNode = buildUsyncUserNode({
+        jid: '5511888888888@s.whatsapp.net',
+        attrs: {
+            pn_jid: '5511888888888@s.whatsapp.net'
+        },
+        content: [
+            {
+                tag: 'contact',
+                attrs: {}
+            }
+        ]
+    })
+    const iq = buildUsyncIq({
+        sid: 'sid-2',
+        mode: WA_USYNC_MODES.QUERY,
+        context: WA_USYNC_CONTEXTS.INTERACTIVE,
+        queryProtocolNodes: [
+            {
+                tag: WA_NODE_TAGS.DEVICES,
+                attrs: {
+                    version: '2'
+                }
+            }
+        ],
+        users: [
+            {
+                jid: '5511999999999@s.whatsapp.net'
+            },
+            {
+                jid: customUserNode.attrs.jid,
+                attrs: {
+                    pn_jid: customUserNode.attrs.pn_jid
+                },
+                content: customUserNode.content
+            }
+        ]
+    })
+
+    assert.equal(iq.attrs.type, 'get')
+    assert.equal(iq.attrs.xmlns, 'usync')
+    assert.equal(iq.attrs.to, WA_DEFAULTS.HOST_DOMAIN)
+    assert.ok(Array.isArray(iq.content))
+    const usyncNode = iq.content[0]
+    assert.equal(usyncNode.tag, WA_NODE_TAGS.USYNC)
+    assert.equal(usyncNode.attrs.sid, 'sid-2')
+    assert.equal(usyncNode.attrs.index, '0')
+    assert.equal(usyncNode.attrs.last, 'true')
+    assert.equal(usyncNode.attrs.mode, WA_USYNC_MODES.QUERY)
+    assert.equal(usyncNode.attrs.context, WA_USYNC_CONTEXTS.INTERACTIVE)
+    assert.ok(Array.isArray(usyncNode.content))
+
+    const queryNode = usyncNode.content.find((child: BinaryNode) => child.tag === WA_NODE_TAGS.QUERY)
+    assert.ok(queryNode)
+    assert.ok(Array.isArray(queryNode.content))
+    assert.equal(queryNode.content[0].tag, WA_NODE_TAGS.DEVICES)
+    assert.equal(queryNode.content[0].attrs.version, '2')
+
+    const listNode = usyncNode.content.find((child: BinaryNode) => child.tag === WA_NODE_TAGS.LIST)
+    assert.ok(listNode)
+    assert.ok(Array.isArray(listNode.content))
+    assert.equal(listNode.content.length, 2)
+    assert.equal(listNode.content[1].attrs.pn_jid, '5511888888888@s.whatsapp.net')
+    assert.ok(Array.isArray(listNode.content[1].content))
+    assert.equal(listNode.content[1].content[0].tag, 'contact')
+
+    assert.throws(
+        () =>
+            buildUsyncIq({
+                sid: 'invalid',
+                queryProtocolNodes: [],
+                users: []
+            }),
+        /must include at least one protocol node/
+    )
 })
 
 test('account sync builders generate expected iq structure', () => {
