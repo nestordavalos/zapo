@@ -212,10 +212,5 @@ function decodeDeviceJids(raw: unknown): readonly string[] {
     if (!Array.isArray(parsed)) {
         throw new Error('device_list_cache.device_jids_json must be an array')
     }
-    return parsed.filter((entry): entry is string => {
-        if (typeof entry !== 'string') {
-            throw new Error('device_list_cache.device_jids_json entry must be string')
-        }
-        return true
-    })
+    return parsed.map((entry) => asString(entry, 'device_list_cache.device_jids_json entry'))
 }

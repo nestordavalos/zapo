@@ -2,12 +2,8 @@ import type { AppStateCollectionName, WaAppStateSyncKey } from '@appstate/types'
 import type { WaMediaTransferClient } from '@media/WaMediaTransferClient'
 import type { Proto } from '@proto'
 import { WA_APP_STATE_COLLECTIONS, WA_APP_STATE_KEY_TYPES } from '@protocol/constants'
-import { decodeProtoBytes } from '@util/base64'
-import { bytesToHex } from '@util/bytes'
-
-export function keyIdToHex(keyId: Uint8Array): string {
-    return bytesToHex(keyId)
-}
+import { decodeProtoBytes } from '@util/bytes'
+import { intToBytes } from '@util/bytes'
 
 export function parseCollectionName(value: string | undefined): AppStateCollectionName | null {
     if (!value) {
@@ -61,11 +57,7 @@ export function pickActiveSyncKey(keys: Iterable<WaAppStateSyncKey>): WaAppState
 }
 
 export function toNetworkOrder64(value: number): Uint8Array {
-    const out = new Uint8Array(8)
-    const view = new DataView(out.buffer)
-    view.setUint32(0, Math.floor(value / 0x1_0000_0000), false)
-    view.setUint32(4, value >>> 0, false)
-    return out
+    return intToBytes(8, value)
 }
 
 export async function downloadExternalBlobReference(

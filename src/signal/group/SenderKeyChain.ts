@@ -8,7 +8,7 @@ import {
     WHISPER_GROUP_INFO
 } from '@signal/constants'
 import type { SenderKeyRecord, SenderMessageKey } from '@signal/types'
-import { removeAt } from '@util/bytes'
+import { assertByteLength, removeAt } from '@util/bytes'
 
 interface SenderChainState {
     readonly chainKey: Uint8Array
@@ -106,9 +106,7 @@ export async function deriveSenderKeyMsgKey(
 }
 
 async function createSenderChainState(chainKey: Uint8Array): Promise<SenderChainState> {
-    if (chainKey.length !== 32) {
-        throw new Error('sender key chainKey must be 32 bytes')
-    }
+    assertByteLength(chainKey, 32, 'sender key chainKey must be 32 bytes')
     return {
         chainKey,
         hmacKey: await importHmacKey(chainKey)

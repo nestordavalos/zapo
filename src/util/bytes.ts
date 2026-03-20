@@ -123,6 +123,57 @@ export function base64ToBytes(value: string): Uint8Array {
     return out
 }
 
+export function base64ToBytesChecked(
+    value: string,
+    field: string,
+    requireNonEmpty = true
+): Uint8Array {
+    const out = base64ToBytes(value)
+    if (requireNonEmpty && out.length === 0) {
+        throw new Error(`invalid base64 payload for ${field}`)
+    }
+    return out
+}
+
+export function decodeBase64Url(value: string | undefined, field: string): Uint8Array {
+    if (!value) {
+        throw new Error(`missing ${field}`)
+    }
+    const padded = value
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
+        .padEnd(Math.ceil(value.length / 4) * 4, '=')
+    return base64ToBytesChecked(padded, field)
+}
+
+export function assertByteLength(
+    value: Uint8Array,
+    expectedLength: number,
+    errorMessage: string,
+    throwOnMismatch = true
+): boolean {
+    if (value.length !== expectedLength) {
+        if (!throwOnMismatch) {
+            return false
+        }
+        throw new Error(errorMessage)
+    }
+    return true
+}
+
+export function decodeProtoBytes(
+    value: Uint8Array | string | null | undefined,
+    field: string
+): Uint8Array {
+    if (value === null || value === undefined) {
+        throw new Error(`missing protobuf bytes field ${field}`)
+    }
+    if (value instanceof Uint8Array) {
+        return value
+    }
+    return base64ToBytes(value)
+}
+
 function lookupBase64(code: number): number {
     if (code > 127) {
         throw new Error('invalid base64 character')

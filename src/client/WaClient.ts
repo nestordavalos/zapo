@@ -17,11 +17,11 @@ import { persistIncomingMailboxEntities } from '@client/mailbox'
 import type {
     WaAppStateMessageKey,
     WaClearChatOptions,
-    WaClientEventMap,
     WaClientOptions,
     WaDeleteChatOptions,
     WaDeleteMessageForMeOptions,
     WaSendMessageOptions,
+    WaClientEventMap,
     WaIncomingProtocolMessageEvent,
     WaIncomingNodeHandlerRegistration,
     WaIncomingMessageEvent
@@ -60,7 +60,7 @@ import type { WaNodeOrchestrator } from '@transport/node/WaNodeOrchestrator'
 import type { WaNodeTransport } from '@transport/node/WaNodeTransport'
 import type { BinaryNode } from '@transport/types'
 import { WaComms } from '@transport/WaComms'
-import { decodeProtoBytes } from '@util/base64'
+import { decodeProtoBytes } from '@util/bytes'
 import { bytesToHex } from '@util/bytes'
 import { toError } from '@util/primitives'
 
@@ -158,31 +158,30 @@ export class WaClient extends EventEmitter {
         this.bindNodeTransportEvents()
     }
 
-    public override on<K extends keyof WaClientEventMap>(
-        event: K,
-        listener: WaClientEventMap[K]
-    ): this {
-        return super.on(event, listener as (...args: unknown[]) => void)
+    public on<K extends keyof WaClientEventMap>(event: K, listener: WaClientEventMap[K]): this
+    public on(event: string | symbol, listener: (...args: unknown[]) => void): this
+    public on(event: string | symbol, listener: (...args: unknown[]) => void): this {
+        return super.on(event, listener)
     }
 
-    public override once<K extends keyof WaClientEventMap>(
-        event: K,
-        listener: WaClientEventMap[K]
-    ): this {
-        return super.once(event, listener as (...args: unknown[]) => void)
+    public once<K extends keyof WaClientEventMap>(event: K, listener: WaClientEventMap[K]): this
+    public once(event: string | symbol, listener: (...args: unknown[]) => void): this
+    public once(event: string | symbol, listener: (...args: unknown[]) => void): this {
+        return super.once(event, listener)
     }
 
-    public override off<K extends keyof WaClientEventMap>(
-        event: K,
-        listener: WaClientEventMap[K]
-    ): this {
-        return super.off(event, listener as (...args: unknown[]) => void)
+    public off<K extends keyof WaClientEventMap>(event: K, listener: WaClientEventMap[K]): this
+    public off(event: string | symbol, listener: (...args: unknown[]) => void): this
+    public off(event: string | symbol, listener: (...args: unknown[]) => void): this {
+        return super.off(event, listener)
     }
 
-    public override emit<K extends keyof WaClientEventMap>(
+    public emit<K extends keyof WaClientEventMap>(
         event: K,
-        ...args: Parameters<WaClientEventMap[K]>
-    ): boolean {
+        payload: Parameters<WaClientEventMap[K]>[0]
+    ): boolean
+    public emit(event: string | symbol, ...args: unknown[]): boolean
+    public emit(event: string | symbol, ...args: unknown[]): boolean {
         return super.emit(event, ...args)
     }
 
@@ -253,12 +252,22 @@ export class WaClient extends EventEmitter {
         })
     }
 
+    private getMailboxPersistenceDeps(): {
+        readonly logger: Logger
+        readonly contactStore: WaContactStore
+        readonly messageStore: WaMessageStore
+    } {
+        return {
+            logger: this.logger,
+            contactStore: this.contactStore,
+            messageStore: this.messageStore
+        }
+    }
+
     private async handleIncomingMessageEvent(event: WaIncomingMessageEvent): Promise<void> {
         this.emit('message', event)
         void persistIncomingMailboxEntities({
-            logger: this.logger,
-            contactStore: this.contactStore,
-            messageStore: this.messageStore,
+            ...this.getMailboxPersistenceDeps(),
             event
         })
         const protocolMessage = event.message?.protocolMessage
@@ -485,10 +494,8 @@ export class WaClient extends EventEmitter {
         try {
             await processHistorySyncNotification(
                 {
-                    logger: this.logger,
+                    ...this.getMailboxPersistenceDeps(),
                     mediaTransfer: this.mediaTransfer,
-                    contactStore: this.contactStore,
-                    messageStore: this.messageStore,
                     threadStore: this.threadStore,
                     emitEvent: this.emit.bind(this) as Parameters<
                         typeof processHistorySyncNotification
@@ -672,18 +679,14 @@ export class WaClient extends EventEmitter {
         if (!this.comms || !this.authClient.getCurrentCredentials()) {
             throw new Error('client is not connected')
         }
-        const normalizedPhoneJids = phoneNumbers.map((phoneNumber) => {
-            const atIndex = phoneNumber.indexOf('@')
-            const phonePart = atIndex === -1 ? phoneNumber : phoneNumber.slice(0, atIndex)
-            return parsePhoneJid(phonePart)
-        })
+        const normalizedPhoneJids = phoneNumbers.map(parsePhoneJid)
         this.logger.trace('wa client query lids by phone numbers', {
             phones: normalizedPhoneJids.length
         })
         return this.signalDeviceSync.queryLidsByPhoneJids(normalizedPhoneJids)
     }
 
-    public async sendMessage(
+    public sendMessage(
         to: string,
         content: WaSendMessageContent,
         options: WaSendMessageOptions = {}
@@ -691,59 +694,59 @@ export class WaClient extends EventEmitter {
         return this.messageDispatch.sendMessage(to, content, options)
     }
 
-    public async syncSignalSession(jid: string, reasonIdentity = false): Promise<void> {
-        await this.messageDispatch.syncSignalSession(jid, reasonIdentity)
+    public syncSignalSession(jid: string, reasonIdentity = false): Promise<void> {
+        return this.messageDispatch.syncSignalSession(jid, reasonIdentity)
     }
 
-    public async sendReceipt(input: WaSendReceiptInput): Promise<void> {
-        await this.messageDispatch.sendReceipt(input)
+    public sendReceipt(input: WaSendReceiptInput): Promise<void> {
+        return this.messageDispatch.sendReceipt(input)
     }
 
-    public async setChatMute(
+    public setChatMute(
         chatJid: string,
         muted: boolean,
         muteEndTimestampMs?: number
     ): Promise<void> {
-        await this.appStateMutations.setChatMute(chatJid, muted, muteEndTimestampMs)
+        return this.appStateMutations.setChatMute(chatJid, muted, muteEndTimestampMs)
     }
 
-    public async setChatRead(chatJid: string, read: boolean): Promise<void> {
-        await this.appStateMutations.setChatRead(chatJid, read)
+    public setChatRead(chatJid: string, read: boolean): Promise<void> {
+        return this.appStateMutations.setChatRead(chatJid, read)
     }
 
-    public async setChatPin(chatJid: string, pinned: boolean): Promise<void> {
-        await this.appStateMutations.setChatPin(chatJid, pinned)
+    public setChatPin(chatJid: string, pinned: boolean): Promise<void> {
+        return this.appStateMutations.setChatPin(chatJid, pinned)
     }
 
-    public async setChatArchive(chatJid: string, archived: boolean): Promise<void> {
-        await this.appStateMutations.setChatArchive(chatJid, archived)
+    public setChatArchive(chatJid: string, archived: boolean): Promise<void> {
+        return this.appStateMutations.setChatArchive(chatJid, archived)
     }
 
-    public async clearChat(chatJid: string, options: WaClearChatOptions = {}): Promise<void> {
-        await this.appStateMutations.clearChat(chatJid, options)
+    public clearChat(chatJid: string, options: WaClearChatOptions = {}): Promise<void> {
+        return this.appStateMutations.clearChat(chatJid, options)
     }
 
-    public async deleteChat(chatJid: string, options: WaDeleteChatOptions = {}): Promise<void> {
-        await this.appStateMutations.deleteChat(chatJid, options)
+    public deleteChat(chatJid: string, options: WaDeleteChatOptions = {}): Promise<void> {
+        return this.appStateMutations.deleteChat(chatJid, options)
     }
 
-    public async setChatLock(chatJid: string, locked: boolean): Promise<void> {
-        await this.appStateMutations.setChatLock(chatJid, locked)
+    public setChatLock(chatJid: string, locked: boolean): Promise<void> {
+        return this.appStateMutations.setChatLock(chatJid, locked)
     }
 
-    public async setMessageStar(message: WaAppStateMessageKey, starred: boolean): Promise<void> {
-        await this.appStateMutations.setMessageStar(message, starred)
+    public setMessageStar(message: WaAppStateMessageKey, starred: boolean): Promise<void> {
+        return this.appStateMutations.setMessageStar(message, starred)
     }
 
-    public async deleteMessageForMe(
+    public deleteMessageForMe(
         message: WaAppStateMessageKey,
         options: WaDeleteMessageForMeOptions = {}
     ): Promise<void> {
-        await this.appStateMutations.deleteMessageForMe(message, options)
+        return this.appStateMutations.deleteMessageForMe(message, options)
     }
 
-    public async flushAppStateMutations(): Promise<void> {
-        await this.appStateMutations.flushMutations()
+    public flushAppStateMutations(): Promise<void> {
+        return this.appStateMutations.flushMutations()
     }
 
     public async exportAppState(): Promise<WaAppStateStoreData> {

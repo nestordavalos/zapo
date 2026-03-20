@@ -14,7 +14,6 @@ import type {
     WaAppStateSyncResult,
     WaAppStateSyncKey
 } from '@appstate/types'
-import { keyIdToHex } from '@appstate/utils'
 import { WaAppStateCrypto } from '@appstate/WaAppStateCrypto'
 import {
     type CollectionResponsePayload,
@@ -38,8 +37,8 @@ import type {
 } from '@store/contracts/appstate.store'
 import { assertIqResult } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
-import { decodeProtoBytes } from '@util/base64'
-import { uint8Equal } from '@util/bytes'
+import { decodeProtoBytes } from '@util/bytes'
+import { bytesToHex, uint8Equal } from '@util/bytes'
 import { longToNumber } from '@util/primitives'
 
 interface OutgoingPatchContext {
@@ -137,7 +136,7 @@ export class WaAppStateSyncClient {
             )
             if (!item.keyData?.keyData) {
                 this.logger.debug('app-state sync key share entry missing key data', {
-                    keyId: keyIdToHex(keyId)
+                    keyId: bytesToHex(keyId)
                 })
                 continue
             }
@@ -491,30 +490,20 @@ export class WaAppStateSyncClient {
         }
 
         const pendingMutationsCount = pendingByCollection.get(collection)?.length ?? 0
-        if (payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT_HAS_MORE) {
-            shouldRefetch = true
-        } else if (
-            payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT &&
-            pendingMutationsCount > 0
+        if (
+            payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT ||
+            payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT_HAS_MORE
         ) {
-            shouldRefetch = true
-        }
-
-        if (payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT) {
-            return this.createCollectionOutcome(
-                collection,
+            shouldRefetch =
+                payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT_HAS_MORE ||
                 pendingMutationsCount > 0
-                    ? WA_APP_STATE_COLLECTION_STATES.CONFLICT
-                    : WA_APP_STATE_COLLECTION_STATES.SUCCESS,
-                payload.version,
-                shouldRefetch
-            )
-        }
-
-        if (payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT_HAS_MORE) {
             return this.createCollectionOutcome(
                 collection,
-                payload.state,
+                payload.state === WA_APP_STATE_COLLECTION_STATES.CONFLICT
+                    ? pendingMutationsCount > 0
+                        ? WA_APP_STATE_COLLECTION_STATES.CONFLICT
+                        : WA_APP_STATE_COLLECTION_STATES.SUCCESS
+                    : payload.state,
                 payload.version,
                 shouldRefetch
             )
@@ -581,15 +570,11 @@ export class WaAppStateSyncClient {
                 collectionStateChanged = true
             }
 
-            if (payload.state === WA_APP_STATE_COLLECTION_STATES.SUCCESS_HAS_MORE) {
-                shouldRefetch = true
-            }
-            if (
-                payload.state === WA_APP_STATE_COLLECTION_STATES.SUCCESS &&
-                skippedUploadCollections.has(collection)
-            ) {
-                shouldRefetch = true
-            }
+            shouldRefetch =
+                shouldRefetch ||
+                payload.state === WA_APP_STATE_COLLECTION_STATES.SUCCESS_HAS_MORE ||
+                (payload.state === WA_APP_STATE_COLLECTION_STATES.SUCCESS &&
+                    skippedUploadCollections.has(collection))
 
             this.logger.debug('app-state collection processed', {
                 collection: payload.collection,
@@ -668,7 +653,7 @@ export class WaAppStateSyncClient {
     private collectDistinctMissingKeyIds(keyIds: readonly Uint8Array[]): readonly Uint8Array[] {
         const byHex = new Map<string, Uint8Array>()
         for (const keyId of keyIds) {
-            const keyHex = keyIdToHex(keyId)
+            const keyHex = bytesToHex(keyId)
             if (byHex.has(keyHex)) {
                 continue
             }
@@ -688,7 +673,7 @@ export class WaAppStateSyncClient {
             return
         }
 
-        const keyIdsHex = keyIds.map((keyId) => keyIdToHex(keyId))
+        const keyIdsHex = keyIds.map((keyId) => bytesToHex(keyId))
         this.logger.info('app-state requesting missing sync keys', {
             keys: keyIdsHex.length,
             keyIds: keyIdsHex.join(','),
@@ -823,7 +808,7 @@ export class WaAppStateSyncClient {
         const keyData = await this.getKeyData(keyId)
         if (!keyData) {
             throw new WaAppStateMissingKeyError(
-                `missing snapshot key ${keyIdToHex(keyId)} for ${collection}`,
+                `missing snapshot key ${bytesToHex(keyId)} for ${collection}`,
                 keyId,
                 collection
             )
@@ -833,7 +818,7 @@ export class WaAppStateSyncClient {
         const mutations: WaAppStateMutation[] = []
         const decryptedRecords = await this.decryptSnapshotRecords(collection, snapshot)
         for (const { decrypted, recordKeyId } of decryptedRecords) {
-            const indexMacHex = keyIdToHex(decrypted.indexMac)
+            const indexMacHex = bytesToHex(decrypted.indexMac)
             indexValueMap.set(indexMacHex, decrypted.valueMac)
             mutations.push({
                 collection,
@@ -888,7 +873,7 @@ export class WaAppStateSyncClient {
         const patchKeyData = await this.getKeyData(patchKeyId)
         if (!patchKeyData) {
             throw new WaAppStateMissingKeyError(
-                `missing patch key ${keyIdToHex(patchKeyId)} for ${collection}`,
+                `missing patch key ${bytesToHex(patchKeyId)} for ${collection}`,
                 patchKeyId,
                 collection
             )
@@ -946,7 +931,7 @@ export class WaAppStateSyncClient {
                 const recordKeyData = await this.getKeyData(recordKeyId)
                 if (!recordKeyData) {
                     throw new WaAppStateMissingKeyError(
-                        `missing snapshot mutation key ${keyIdToHex(recordKeyId)} for ${collection}`,
+                        `missing snapshot mutation key ${bytesToHex(recordKeyId)} for ${collection}`,
                         recordKeyId,
                         collection
                     )
@@ -995,7 +980,7 @@ export class WaAppStateSyncClient {
                 const recordKeyData = await this.getKeyData(recordKeyId)
                 if (!recordKeyData) {
                     throw new WaAppStateMissingKeyError(
-                        `missing mutation key ${keyIdToHex(recordKeyId)} for ${collection}`,
+                        `missing mutation key ${bytesToHex(recordKeyId)} for ${collection}`,
                         recordKeyId,
                         collection
                     )
@@ -1191,7 +1176,7 @@ export class WaAppStateSyncClient {
         const removeValues: Uint8Array[] = []
         let missingRemoveCount = 0
         for (const mutation of mutations) {
-            const indexMacHex = keyIdToHex(mutation.indexMac)
+            const indexMacHex = bytesToHex(mutation.indexMac)
             const existing = indexValueMap.get(indexMacHex)
             if (mutation.operation === proto.SyncdMutation.SyncdOperation.REMOVE) {
                 if (!existing) {
@@ -1264,7 +1249,7 @@ export class WaAppStateSyncClient {
 
     private async getKeyData(keyId: Uint8Array): Promise<Uint8Array | null> {
         const context = this.requireSyncContext()
-        const keyHex = keyIdToHex(keyId)
+        const keyHex = bytesToHex(keyId)
         if (context.keys.has(keyHex)) {
             return context.keys.get(keyHex) ?? null
         }

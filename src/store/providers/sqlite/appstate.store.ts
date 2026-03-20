@@ -3,10 +3,7 @@ import {
     decodeAppStateCollections,
     decodeAppStateFingerprint,
     decodeAppStateSyncKeys,
-    encodeAppStateFingerprint,
-    type AppStateCollectionValueRow,
-    type AppStateCollectionVersionRow,
-    type AppStateSyncKeyRow
+    encodeAppStateFingerprint
 } from '@appstate/store/sqlite'
 import type {
     AppStateCollectionName,
@@ -24,9 +21,7 @@ import type { WaSqliteStorageOptions } from '@store/types'
 import { uint8Equal } from '@util/bytes'
 import { asBytes, asNumber, asString } from '@util/coercion'
 
-interface KeyDataRow extends Record<string, unknown> {
-    readonly key_data: unknown
-}
+type SqliteRow = Readonly<Record<string, unknown>>
 
 export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppStateStore {
     public constructor(options: WaSqliteStorageOptions) {
@@ -35,19 +30,19 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
 
     public async exportData(): Promise<WaAppStateStoreData> {
         const db = await this.getConnection()
-        const keyRows = db.all<AppStateSyncKeyRow>(
+        const keyRows = db.all<SqliteRow>(
             `SELECT key_id, key_data, timestamp, fingerprint
              FROM appstate_sync_keys
              WHERE session_id = ?`,
             [this.options.sessionId]
         )
-        const versionRows = db.all<AppStateCollectionVersionRow>(
+        const versionRows = db.all<SqliteRow>(
             `SELECT collection, version, hash
              FROM appstate_collection_versions
              WHERE session_id = ?`,
             [this.options.sessionId]
         )
-        const valueRows = db.all<AppStateCollectionValueRow>(
+        const valueRows = db.all<SqliteRow>(
             `SELECT collection, index_mac_hex, value_mac
              FROM appstate_collection_index_values
              WHERE session_id = ?`,
@@ -64,7 +59,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
         let inserted = 0
         await this.withTransaction((db) => {
             for (const key of keys) {
-                const existing = db.get<KeyDataRow>(
+                const existing = db.get<SqliteRow>(
                     `SELECT key_data
                      FROM appstate_sync_keys
                      WHERE session_id = ? AND key_id = ?`,
@@ -111,7 +106,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
 
     public async getSyncKey(keyId: Uint8Array): Promise<WaAppStateSyncKey | null> {
         const db = await this.getConnection()
-        const row = db.get<AppStateSyncKeyRow>(
+        const row = db.get<SqliteRow>(
             `SELECT key_id, key_data, timestamp, fingerprint
              FROM appstate_sync_keys
              WHERE session_id = ? AND key_id = ?`,
@@ -130,7 +125,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
 
     public async getSyncKeyData(keyId: Uint8Array): Promise<Uint8Array | null> {
         const db = await this.getConnection()
-        const row = db.get<KeyDataRow>(
+        const row = db.get<SqliteRow>(
             `SELECT key_data
              FROM appstate_sync_keys
              WHERE session_id = ? AND key_id = ?`,
@@ -144,7 +139,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
 
     public async getActiveSyncKey(): Promise<WaAppStateSyncKey | null> {
         const db = await this.getConnection()
-        const rows = db.all<AppStateSyncKeyRow>(
+        const rows = db.all<SqliteRow>(
             `SELECT key_id, key_data, timestamp, fingerprint
              FROM appstate_sync_keys
              WHERE session_id = ?`,
@@ -167,7 +162,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
         collection: AppStateCollectionName
     ): Promise<WaAppStateCollectionStoreState> {
         const db = await this.getConnection()
-        const versionRow = db.get<AppStateCollectionVersionRow>(
+        const versionRow = db.get<SqliteRow>(
             `SELECT version, hash
              FROM appstate_collection_versions
              WHERE session_id = ? AND collection = ?`,
@@ -182,7 +177,7 @@ export class WaAppStateSqliteStore extends BaseSqliteStore implements WaAppState
             }
         }
 
-        const valueRows = db.all<AppStateCollectionValueRow>(
+        const valueRows = db.all<SqliteRow>(
             `SELECT index_mac_hex, value_mac
              FROM appstate_collection_index_values
              WHERE session_id = ? AND collection = ?`,

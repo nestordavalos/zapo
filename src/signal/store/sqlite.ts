@@ -14,6 +14,7 @@ import type {
     SignalSessionSnapshot,
     SignedPreKeyRecord
 } from '@signal/types'
+import { assertByteLength } from '@util/bytes'
 import {
     asBytes,
     asNumber,
@@ -203,17 +204,11 @@ function decodeSignalMessageKey(
     field: string
 ): SignalMessageKey {
     const cipherKey = asBytes(messageKey.cipherKey, `${field}.cipherKey`)
-    if (cipherKey.byteLength !== 32) {
-        throw new Error(`invalid ${field}.cipherKey length ${cipherKey.byteLength}`)
-    }
+    assertByteLength(cipherKey, 32, `invalid ${field}.cipherKey length ${cipherKey.byteLength}`)
     const macKey = asBytes(messageKey.macKey, `${field}.macKey`)
-    if (macKey.byteLength !== 32) {
-        throw new Error(`invalid ${field}.macKey length ${macKey.byteLength}`)
-    }
+    assertByteLength(macKey, 32, `invalid ${field}.macKey length ${macKey.byteLength}`)
     const iv = asBytes(messageKey.iv, `${field}.iv`)
-    if (iv.byteLength !== 16) {
-        throw new Error(`invalid ${field}.iv length ${iv.byteLength}`)
-    }
+    assertByteLength(iv, 16, `invalid ${field}.iv length ${iv.byteLength}`)
     return {
         index: asNumber(messageKey.index, `${field}.index`),
         cipherKey,
@@ -231,13 +226,17 @@ function decodeSignalRecvChain(
         throw new Error(`missing ${field}.chainKey`)
     }
     const ratchetPubKey = asBytes(chain.senderRatchetKey, `${field}.senderRatchetKey`)
-    if (ratchetPubKey.byteLength !== 33) {
-        throw new Error(`invalid ${field}.senderRatchetKey length ${ratchetPubKey.byteLength}`)
-    }
+    assertByteLength(
+        ratchetPubKey,
+        33,
+        `invalid ${field}.senderRatchetKey length ${ratchetPubKey.byteLength}`
+    )
     const chainKeyBytes = asBytes(chainKey.key, `${field}.chainKey.key`)
-    if (chainKeyBytes.byteLength !== 32) {
-        throw new Error(`invalid ${field}.chainKey.key length ${chainKeyBytes.byteLength}`)
-    }
+    assertByteLength(
+        chainKeyBytes,
+        32,
+        `invalid ${field}.chainKey.key length ${chainKeyBytes.byteLength}`
+    )
     return {
         ratchetPubKey,
         nextMsgIndex: asNumber(chainKey.index, `${field}.chainKey.index`),
@@ -263,17 +262,23 @@ function decodeSignalSendChain(
     if (!privateKey) {
         throw new Error(`missing ${field}.senderRatchetKeyPrivate`)
     }
-    if (privateKey.byteLength !== 32) {
-        throw new Error(`invalid ${field}.senderRatchetKeyPrivate length ${privateKey.byteLength}`)
-    }
+    assertByteLength(
+        privateKey,
+        32,
+        `invalid ${field}.senderRatchetKeyPrivate length ${privateKey.byteLength}`
+    )
     const ratchetPubKey = asBytes(chain.senderRatchetKey, `${field}.senderRatchetKey`)
-    if (ratchetPubKey.byteLength !== 33) {
-        throw new Error(`invalid ${field}.senderRatchetKey length ${ratchetPubKey.byteLength}`)
-    }
+    assertByteLength(
+        ratchetPubKey,
+        33,
+        `invalid ${field}.senderRatchetKey length ${ratchetPubKey.byteLength}`
+    )
     const chainKeyBytes = asBytes(chainKey.key, `${field}.chainKey.key`)
-    if (chainKeyBytes.byteLength !== 32) {
-        throw new Error(`invalid ${field}.chainKey.key length ${chainKeyBytes.byteLength}`)
-    }
+    assertByteLength(
+        chainKeyBytes,
+        32,
+        `invalid ${field}.chainKey.key length ${chainKeyBytes.byteLength}`
+    )
     return {
         ratchetKey: {
             pubKey: ratchetPubKey,
@@ -294,28 +299,36 @@ function decodeSignalSessionSnapshot(
     }
     const pendingPreKey = session.pendingPreKey
     const localPubKey = asBytes(session.localIdentityPublic, `${field}.localIdentityPublic`)
-    if (localPubKey.byteLength !== 33) {
-        throw new Error(`invalid ${field}.localIdentityPublic length ${localPubKey.byteLength}`)
-    }
+    assertByteLength(
+        localPubKey,
+        33,
+        `invalid ${field}.localIdentityPublic length ${localPubKey.byteLength}`
+    )
     const remotePubKey = asBytes(session.remoteIdentityPublic, `${field}.remoteIdentityPublic`)
-    if (remotePubKey.byteLength !== 33) {
-        throw new Error(`invalid ${field}.remoteIdentityPublic length ${remotePubKey.byteLength}`)
-    }
+    assertByteLength(
+        remotePubKey,
+        33,
+        `invalid ${field}.remoteIdentityPublic length ${remotePubKey.byteLength}`
+    )
     const rootKey = asBytes(session.rootKey, `${field}.rootKey`)
-    if (rootKey.byteLength !== 32) {
-        throw new Error(`invalid ${field}.rootKey length ${rootKey.byteLength}`)
-    }
+    assertByteLength(rootKey, 32, `invalid ${field}.rootKey length ${rootKey.byteLength}`)
     const localOneTimePubKey = pendingPreKey
         ? asBytes(pendingPreKey.baseKey, `${field}.pendingPreKey.baseKey`)
         : null
-    if (localOneTimePubKey && localOneTimePubKey.byteLength !== 33) {
-        throw new Error(
+    if (localOneTimePubKey) {
+        assertByteLength(
+            localOneTimePubKey,
+            33,
             `invalid ${field}.pendingPreKey.baseKey length ${localOneTimePubKey.byteLength}`
         )
     }
     const aliceBaseKey = asOptionalBytes(session.aliceBaseKey, `${field}.aliceBaseKey`) ?? null
-    if (aliceBaseKey && aliceBaseKey.byteLength !== 33) {
-        throw new Error(`invalid ${field}.aliceBaseKey length ${aliceBaseKey.byteLength}`)
+    if (aliceBaseKey) {
+        assertByteLength(
+            aliceBaseKey,
+            33,
+            `invalid ${field}.aliceBaseKey length ${aliceBaseKey.byteLength}`
+        )
     }
     return {
         local: {

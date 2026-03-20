@@ -43,26 +43,16 @@ function parseRetryType(value: string | undefined): WaRetryReceiptType | null {
     return null
 }
 
+function parseRetryOptionalInt(value: string | undefined): number | undefined {
+    return parseOptionalInt(value)
+}
+
 function parseRetryCount(value: string | undefined): number {
-    const parsed = parseOptionalInt(value)
-    if (parsed === undefined) {
-        return 0
-    }
-    if (parsed < 0) {
-        throw new Error('retry count must be >= 0')
-    }
-    return parsed
+    return parseRetryOptionalInt(value) ?? 0
 }
 
 function parseRetryReason(value: string | undefined): number | undefined {
-    const parsed = parseOptionalInt(value)
-    if (parsed === undefined) {
-        return undefined
-    }
-    if (parsed < 0) {
-        throw new Error('retry reason must be >= 0')
-    }
-    return parsed
+    return parseRetryOptionalInt(value)
 }
 
 function parseRetryKeyBundle(node: BinaryNode | undefined): WaRetryKeyBundle | undefined {

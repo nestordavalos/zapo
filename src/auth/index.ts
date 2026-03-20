@@ -1,6 +1,4 @@
 export * from '@auth/types'
-export { getLoginIdentity } from '@protocol/jid'
 export { WaAuthClient } from '@auth/WaAuthClient'
 export { completeCompanionFinish, createCompanionHello } from '@auth/pairing/WaPairingCodeCrypto'
 export { WaAuthSqliteStore } from '@store/providers/sqlite/auth.store'
-export type { WaAuthStore } from '@store/contracts/auth.store'

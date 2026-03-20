@@ -1,6 +1,5 @@
 import type { WaRetryOutboundState, WaRetryReplayPayload } from '@retry/types'
-import { base64ToBytes, bytesToBase64 } from '@util/base64'
-import { TEXT_DECODER, TEXT_ENCODER } from '@util/bytes'
+import { base64ToBytesChecked, bytesToBase64, TEXT_DECODER, TEXT_ENCODER } from '@util/bytes'
 
 function requireObject(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object') {
@@ -50,7 +49,7 @@ export function decodeRetryReplayPayload(raw: Uint8Array): WaRetryReplayPayload 
             mode,
             to: requireString(parsed.to, 'to'),
             type: requireString(parsed.type, 'type'),
-            plaintext: base64ToBytes(
+            plaintext: base64ToBytesChecked(
                 requireString(parsed.plaintext, 'plaintext'),
                 'retry.plaintext'
             )
@@ -66,7 +65,7 @@ export function decodeRetryReplayPayload(raw: Uint8Array): WaRetryReplayPayload 
             to: requireString(parsed.to, 'to'),
             type: requireString(parsed.type, 'type'),
             encType,
-            ciphertext: base64ToBytes(
+            ciphertext: base64ToBytesChecked(
                 requireString(parsed.ciphertext, 'ciphertext'),
                 'retry.ciphertext'
             ),
@@ -79,7 +78,7 @@ export function decodeRetryReplayPayload(raw: Uint8Array): WaRetryReplayPayload 
     if (mode === 'opaque_node') {
         return {
             mode,
-            node: base64ToBytes(requireString(parsed.node, 'node'), 'retry.node')
+            node: base64ToBytesChecked(requireString(parsed.node, 'node'), 'retry.node')
         }
     }
     throw new Error(`invalid retry replay payload mode: ${mode}`)

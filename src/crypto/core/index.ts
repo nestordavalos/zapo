@@ -4,7 +4,6 @@
 
 export { Ed25519 } from '@crypto/curves/Ed25519'
 export { X25519 } from '@crypto/curves/X25519'
-export { decodeBase64Url, assert32 } from '@crypto/core/encoding'
 export { hkdf, hkdfSplit } from '@crypto/core/hkdf'
 export {
     toSerializedPubKey,

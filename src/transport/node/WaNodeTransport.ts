@@ -8,14 +8,6 @@ import type { BinaryNode } from '@transport/types'
 import type { WaComms } from '@transport/WaComms'
 import { toError } from '@util/primitives'
 
-interface NodeTransportEventMap {
-    readonly frame_in: (frame: Uint8Array) => void
-    readonly frame_out: (frame: Uint8Array) => void
-    readonly node_in: (node: BinaryNode, frame: Uint8Array) => void
-    readonly node_out: (node: BinaryNode, frame: Uint8Array) => void
-    readonly decode_error: (error: Error, frame: Uint8Array) => void
-}
-
 export class WaNodeTransport extends EventEmitter {
     private readonly logger: Logger
     private comms: WaComms | null
@@ -24,13 +16,6 @@ export class WaNodeTransport extends EventEmitter {
         super()
         this.logger = logger
         this.comms = null
-    }
-
-    public override on<K extends keyof NodeTransportEventMap>(
-        event: K,
-        listener: NodeTransportEventMap[K]
-    ): this {
-        return super.on(event, listener as (...args: unknown[]) => void)
     }
 
     public bindComms(comms: WaComms | null): void {

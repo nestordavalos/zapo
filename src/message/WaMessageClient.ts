@@ -153,12 +153,7 @@ export class WaMessageClient {
 
     public async sendEncrypted(input: WaEncryptedMessageInput): Promise<void> {
         const node = this.buildEncryptedMessageNode(input)
-        this.logger.debug('encrypted message sent without waiting for ack', {
-            to: node.attrs.to,
-            type: node.attrs.type,
-            id: node.attrs.id
-        })
-        await this.sendNode(node)
+        await this.sendMessageNode(node)
     }
 
     private buildEncryptedMessageNode(input: WaEncryptedMessageInput): BinaryNode {

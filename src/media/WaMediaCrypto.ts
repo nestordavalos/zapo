@@ -33,6 +33,7 @@ import type {
 } from '@media/types'
 import { WA_APP_STATE_KEY_TYPES, getWaMediaHkdfInfo } from '@protocol/constants'
 import {
+    assertByteLength,
     concatBytes,
     EMPTY_BYTES,
     readAllBytes,
@@ -52,9 +53,11 @@ export class WaMediaCrypto {
         mediaType: MediaCryptoType,
         mediaKey: Uint8Array
     ): Promise<WaMediaDerivedKeys> {
-        if (mediaKey.byteLength !== 32) {
-            throw new Error(`invalid media key length ${mediaKey.byteLength}, expected 32`)
-        }
+        assertByteLength(
+            mediaKey,
+            32,
+            `invalid media key length ${mediaKey.byteLength}, expected 32`
+        )
         const info = mediaTypeToHkdfInfo(mediaType)
         const expanded = await hkdf(mediaKey, null, info, MEDIA_HKDF_SIZE)
         return {

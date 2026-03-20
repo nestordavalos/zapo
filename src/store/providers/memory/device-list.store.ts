@@ -53,15 +53,7 @@ export class WaDeviceListMemoryStore implements WaDeviceListStore {
 
     public async upsertUserDevicesBatch(snapshots: readonly WaDeviceListSnapshot[]): Promise<void> {
         for (const snapshot of snapshots) {
-            setBoundedMapEntry(
-                this.records,
-                snapshot.userJid,
-                {
-                    ...snapshot,
-                    expiresAtMs: snapshot.updatedAtMs + this.ttlMs
-                },
-                this.maxUsers
-            )
+            await this.upsertUserDevices(snapshot)
         }
     }
 
@@ -77,11 +69,7 @@ export class WaDeviceListMemoryStore implements WaDeviceListStore {
             this.records.delete(userJid)
             return null
         }
-        return {
-            userJid: record.userJid,
-            deviceJids: record.deviceJids,
-            updatedAtMs: record.updatedAtMs
-        }
+        return record
     }
 
     public async getUserDevicesBatch(
@@ -97,11 +85,7 @@ export class WaDeviceListMemoryStore implements WaDeviceListStore {
                 this.records.delete(userJid)
                 return null
             }
-            return {
-                userJid: record.userJid,
-                deviceJids: record.deviceJids,
-                updatedAtMs: record.updatedAtMs
-            }
+            return record
         })
     }
 

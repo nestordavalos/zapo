@@ -2,8 +2,7 @@ import { ed25519VerifyRaw, toSerializedPubKey } from '@crypto'
 import { montgomeryToEdwardsPublic } from '@crypto/curves/X25519'
 import { proto } from '@proto'
 import { ROOT_CA_PUBLIC_KEY_HEX, ROOT_CA_SERIAL } from '@transport/noise/constants'
-import { decodeProtoBytes } from '@util/base64'
-import { hexToBytes, uint8Equal } from '@util/bytes'
+import { assertByteLength, decodeProtoBytes, hexToBytes, uint8Equal } from '@util/bytes'
 import { toSafeNumber } from '@util/primitives'
 
 interface ParsedNoiseCertificate {
@@ -20,7 +19,7 @@ async function verifySignalVariant(
     signatureInput: Uint8Array
 ): Promise<boolean> {
     const publicKey = toSerializedPubKey(serializedPublicKey)
-    if (signatureInput.length !== 64) {
+    if (!assertByteLength(signatureInput, 64, 'invalid certificate signature size', false)) {
         return false
     }
     const signature = new Uint8Array(signatureInput)
@@ -44,9 +43,7 @@ function parseNoiseCertificate(
 
     const detailsBytes = decodeProtoBytes(certificate.details, 'certificate.details')
     const signatureBytes = decodeProtoBytes(certificate.signature, 'certificate.signature')
-    if (signatureBytes.length !== 64) {
-        throw new Error('invalid certificate signature size')
-    }
+    assertByteLength(signatureBytes, 64, 'invalid certificate signature size')
 
     const details = proto.CertChain.NoiseCertificate.Details.decode(detailsBytes)
     const serial = toSafeNumber(details.serial as number, 'certificate.serial')

@@ -1,5 +1,7 @@
 import { randomBytesAsync } from '@crypto'
 
+import { formatNodeIdPrefixFromSeed } from './helpers'
+
 interface WaUsyncIdState {
     prefix: string | null
     prefixPromise: Promise<string> | null
@@ -42,7 +44,5 @@ async function getUsyncPrefix(state: WaUsyncIdState): Promise<string> {
 
 async function buildUsyncPrefix(): Promise<string> {
     const seed = await randomBytesAsync(4)
-    const left = ((seed[0] << 8) | seed[1]) >>> 0
-    const right = ((seed[2] << 8) | seed[3]) >>> 0
-    return `${left}.${right}-`
+    return formatNodeIdPrefixFromSeed(seed)
 }

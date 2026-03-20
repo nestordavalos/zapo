@@ -3,13 +3,11 @@ import { WA_XMLNS } from '@protocol/nodes'
 import { buildIqNode } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
-interface BuildCreateGroupIqInput {
+export function buildCreateGroupIq(input: {
     readonly subject: string
     readonly participants: readonly string[]
     readonly description?: string
-}
-
-export function buildCreateGroupIq(input: BuildCreateGroupIqInput): BinaryNode {
+}): BinaryNode {
     const children: BinaryNode[] = input.participants.map((jid) => ({
         tag: 'participant',
         attrs: { jid }
@@ -34,15 +32,11 @@ export function buildCreateGroupIq(input: BuildCreateGroupIqInput): BinaryNode {
 
 type GroupParticipantAction = 'add' | 'remove' | 'promote' | 'demote'
 
-interface BuildGroupParticipantChangeIqInput {
+export function buildGroupParticipantChangeIq(input: {
     readonly groupJid: string
     readonly action: GroupParticipantAction
     readonly participants: readonly string[]
-}
-
-export function buildGroupParticipantChangeIq(
-    input: BuildGroupParticipantChangeIqInput
-): BinaryNode {
+}): BinaryNode {
     return buildIqNode('set', input.groupJid, WA_XMLNS.GROUPS, [
         {
             tag: input.action,

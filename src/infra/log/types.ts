@@ -8,3 +8,16 @@ export interface Logger {
     warn(message: string, context?: Readonly<Record<string, unknown>>): void
     error(message: string, context?: Readonly<Record<string, unknown>>): void
 }
+
+function noop(): void {}
+
+export function createNoopLogger(level: LogLevel = 'trace'): Logger {
+    return {
+        level,
+        trace: noop,
+        debug: noop,
+        info: noop,
+        warn: noop,
+        error: noop
+    }
+}

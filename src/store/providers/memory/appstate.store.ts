@@ -4,13 +4,13 @@ import type {
     WaAppStateStoreData,
     WaAppStateSyncKey
 } from '@appstate/types'
-import { keyIdToHex, pickActiveSyncKey } from '@appstate/utils'
+import { pickActiveSyncKey } from '@appstate/utils'
 import type {
     WaAppStateCollectionStateUpdate,
     WaAppStateCollectionStoreState,
     WaAppStateStore
 } from '@store/contracts/appstate.store'
-import { uint8Equal } from '@util/bytes'
+import { bytesToHex, uint8Equal } from '@util/bytes'
 import { resolvePositive } from '@util/coercion'
 import { setBoundedMapEntry } from '@util/collections'
 
@@ -60,7 +60,7 @@ export class WaAppStateMemoryStore implements WaAppStateStore {
         )
         if (initial) {
             for (const key of initial.keys) {
-                setBoundedMapEntry(this.keys, keyIdToHex(key.keyId), key, this.maxSyncKeys)
+                setBoundedMapEntry(this.keys, bytesToHex(key.keyId), key, this.maxSyncKeys)
             }
             for (const [collectionName, collection] of Object.entries(
                 initial.collections
@@ -103,7 +103,7 @@ export class WaAppStateMemoryStore implements WaAppStateStore {
     public async upsertSyncKeys(keys: readonly WaAppStateSyncKey[]): Promise<number> {
         let inserted = 0
         for (const key of keys) {
-            const keyHex = keyIdToHex(key.keyId)
+            const keyHex = bytesToHex(key.keyId)
             const existing = this.keys.get(keyHex)
             if (existing && uint8Equal(existing.keyData, key.keyData)) {
                 continue
@@ -115,11 +115,11 @@ export class WaAppStateMemoryStore implements WaAppStateStore {
     }
 
     public async getSyncKey(keyId: Uint8Array): Promise<WaAppStateSyncKey | null> {
-        return this.keys.get(keyIdToHex(keyId)) ?? null
+        return this.keys.get(bytesToHex(keyId)) ?? null
     }
 
     public async getSyncKeyData(keyId: Uint8Array): Promise<Uint8Array | null> {
-        return this.keys.get(keyIdToHex(keyId))?.keyData ?? null
+        return this.keys.get(bytesToHex(keyId))?.keyData ?? null
     }
 
     public async getActiveSyncKey(): Promise<WaAppStateSyncKey | null> {

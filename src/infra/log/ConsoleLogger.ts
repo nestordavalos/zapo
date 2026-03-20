@@ -8,6 +8,14 @@ const LOG_LEVEL_PRIORITY: Readonly<Record<LogLevel, number>> = {
     error: 50
 }
 
+const CONSOLE_WRITERS: Readonly<Record<LogLevel, (...args: unknown[]) => void>> = {
+    trace: console.debug,
+    debug: console.debug,
+    info: console.info,
+    warn: console.warn,
+    error: console.error
+}
+
 export class ConsoleLogger implements Logger {
     public readonly level: LogLevel
 
@@ -16,36 +24,33 @@ export class ConsoleLogger implements Logger {
     }
 
     public trace(message: string, context?: Record<string, unknown>): void {
-        if (this.canLog('trace')) {
-            console.debug(message, context)
-        }
+        this.write('trace', message, context)
     }
 
     public debug(message: string, context?: Record<string, unknown>): void {
-        if (this.canLog('debug')) {
-            console.debug(message, context)
-        }
+        this.write('debug', message, context)
     }
 
     public info(message: string, context?: Record<string, unknown>): void {
-        if (this.canLog('info')) {
-            console.info(message, context)
-        }
+        this.write('info', message, context)
     }
 
     public warn(message: string, context?: Record<string, unknown>): void {
-        if (this.canLog('warn')) {
-            console.warn(message, context)
-        }
+        this.write('warn', message, context)
     }
 
     public error(message: string, context?: Record<string, unknown>): void {
-        if (this.canLog('error')) {
-            console.error(message, context)
-        }
+        this.write('error', message, context)
     }
 
     private canLog(level: LogLevel): boolean {
         return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[this.level]
+    }
+
+    private write(level: LogLevel, message: string, context?: Record<string, unknown>): void {
+        if (!this.canLog(level)) {
+            return
+        }
+        CONSOLE_WRITERS[level](message, context)
     }
 }

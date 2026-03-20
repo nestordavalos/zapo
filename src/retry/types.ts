@@ -7,17 +7,16 @@ export type WaRetryOutboundState = 'pending' | 'delivered' | 'read' | 'played' |
 export interface WaRetryKey {
     readonly id: number
     readonly publicKey: Uint8Array
+    readonly signature?: Uint8Array
 }
 
-export interface WaRetrySignedKey extends WaRetryKey {
-    readonly signature: Uint8Array
-}
+export type WaRetrySignedKey = WaRetryKey & { readonly signature: Uint8Array }
 
 export interface WaRetryKeyBundle {
     readonly identity: Uint8Array
     readonly deviceIdentity?: Uint8Array
     readonly key?: WaRetryKey
-    readonly skey: WaRetrySignedKey
+    readonly skey: WaRetryKey
 }
 
 export interface WaParsedRetryRequest {

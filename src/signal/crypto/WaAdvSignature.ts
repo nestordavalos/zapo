@@ -18,7 +18,7 @@ import {
     ADV_PREFIX_HOSTED_DEVICE_SIGNATURE,
     SIGNAL_PREFIX_SIGNATURE_RANDOM
 } from '@signal/crypto/constants'
-import { concatBytes } from '@util/bytes'
+import { assertByteLength, concatBytes } from '@util/bytes'
 
 export {
     ADV_PREFIX_ACCOUNT_SIGNATURE,
@@ -32,7 +32,7 @@ export async function verifySignalSignature(
     message: Uint8Array,
     signature: Uint8Array
 ): Promise<boolean> {
-    if (signature.length !== 64) {
+    if (!assertByteLength(signature, 64, 'invalid signal signature length', false)) {
         return false
     }
     if ((signature[63] & 0x60) !== 0) {
@@ -53,9 +53,7 @@ export async function signSignalMessage(
     privateKey: Uint8Array,
     message: Uint8Array
 ): Promise<Uint8Array> {
-    if (privateKey.length !== 32) {
-        throw new Error(`invalid curve25519 private key length ${privateKey.length}`)
-    }
+    assertByteLength(privateKey, 32, `invalid curve25519 private key length ${privateKey.length}`)
 
     const clampedPrivateKey = clampCurvePrivateKeyInPlace(privateKey)
     const privateScalar = bytesToBigIntLE(clampedPrivateKey)

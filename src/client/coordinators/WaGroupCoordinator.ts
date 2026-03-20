@@ -1,3 +1,4 @@
+import { parseParticipants as parseGroupEventParticipants } from '@client/events/group'
 import { WA_DEFAULTS } from '@protocol/defaults'
 import { WA_GROUP_PARTICIPANT_TYPES, type WaGroupSetting } from '@protocol/group'
 import { WA_NODE_TAGS, WA_XMLNS } from '@protocol/nodes'
@@ -96,18 +97,22 @@ export interface WaGroupCoordinator {
 type WaGroupParticipantChangeAction = 'add' | 'remove' | 'promote' | 'demote'
 
 function parseGroupParticipants(node: BinaryNode): readonly WaGroupParticipant[] {
-    const participantNodes = getNodeChildrenByTag(node, WA_NODE_TAGS.PARTICIPANT)
-    return participantNodes.map((p) => {
-        const type = p.attrs.type ?? WA_GROUP_PARTICIPANT_TYPES.REGULAR
-        return {
-            jid: p.attrs.jid,
-            type,
-            isAdmin:
-                type === WA_GROUP_PARTICIPANT_TYPES.ADMIN ||
-                type === WA_GROUP_PARTICIPANT_TYPES.SUPERADMIN,
-            isSuperAdmin: type === WA_GROUP_PARTICIPANT_TYPES.SUPERADMIN
-        }
-    })
+    return parseGroupEventParticipants(node)
+        .filter(
+            (participant): participant is typeof participant & { readonly jid: string } =>
+                !!participant.jid
+        )
+        .map((participant) => {
+            const type = participant.role ?? WA_GROUP_PARTICIPANT_TYPES.REGULAR
+            return {
+                jid: participant.jid,
+                type,
+                isAdmin:
+                    type === WA_GROUP_PARTICIPANT_TYPES.ADMIN ||
+                    type === WA_GROUP_PARTICIPANT_TYPES.SUPERADMIN,
+                isSuperAdmin: type === WA_GROUP_PARTICIPANT_TYPES.SUPERADMIN
+            }
+        })
 }
 
 function parseGroupMetadata(node: BinaryNode): WaGroupMetadata {

@@ -168,54 +168,26 @@ export function createStore(options: WaCreateStoreOptions): WaStore {
                 return cached
             }
 
-            const custom = options.custom
-            const customCache = options.customCache
-            const customAuth = resolveStoreValue(normalizedSessionId, custom?.auth, 'custom.auth')
-            const customSignal = resolveStoreValue(
-                normalizedSessionId,
-                custom?.signal,
-                'custom.signal'
-            )
-            const customSenderKey = resolveStoreValue(
-                normalizedSessionId,
-                custom?.senderKey,
-                'custom.senderKey'
-            )
-            const customAppState = resolveStoreValue(
-                normalizedSessionId,
-                custom?.appState,
-                'custom.appState'
-            )
-            const customRetry = resolveStoreValue(
-                normalizedSessionId,
-                customCache?.retry,
-                'customCache.retry'
-            )
-            const customParticipants = resolveStoreValue(
-                normalizedSessionId,
-                customCache?.participants,
+            const resolveCustom = <T>(
+                value: WaStoreDomainValueOrFactory<T> | undefined,
+                domainPath: string
+            ): T | null => resolveStoreValue(normalizedSessionId, value, domainPath)
+            const customAuth = resolveCustom(options.custom?.auth, 'custom.auth')
+            const customSignal = resolveCustom(options.custom?.signal, 'custom.signal')
+            const customSenderKey = resolveCustom(options.custom?.senderKey, 'custom.senderKey')
+            const customAppState = resolveCustom(options.custom?.appState, 'custom.appState')
+            const customRetry = resolveCustom(options.customCache?.retry, 'customCache.retry')
+            const customParticipants = resolveCustom(
+                options.customCache?.participants,
                 'customCache.participants'
             )
-            const customDeviceList = resolveStoreValue(
-                normalizedSessionId,
-                customCache?.deviceList,
+            const customDeviceList = resolveCustom(
+                options.customCache?.deviceList,
                 'customCache.deviceList'
             )
-            const customMessages = resolveStoreValue(
-                normalizedSessionId,
-                custom?.messages,
-                'custom.messages'
-            )
-            const customThreads = resolveStoreValue(
-                normalizedSessionId,
-                custom?.threads,
-                'custom.threads'
-            )
-            const customContacts = resolveStoreValue(
-                normalizedSessionId,
-                custom?.contacts,
-                'custom.contacts'
-            )
+            const customMessages = resolveCustom(options.custom?.messages, 'custom.messages')
+            const customThreads = resolveCustom(options.custom?.threads, 'custom.threads')
+            const customContacts = resolveCustom(options.custom?.contacts, 'custom.contacts')
             const memoryLimits: WaStoreMemoryLimitSelection = options.memory?.limits ?? {}
 
             const requiresSqlite =

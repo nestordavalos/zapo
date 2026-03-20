@@ -11,7 +11,6 @@ import {
     APP_STATE_POINT_SIZE,
     APP_STATE_VALUE_MAC_LENGTH
 } from '@appstate/constants'
-import { toNetworkOrder64 } from '@appstate/utils'
 import { hkdf } from '@crypto/core/hkdf'
 import {
     aesCbcDecrypt,
@@ -25,9 +24,17 @@ import { randomBytesAsync } from '@crypto/core/random'
 import { proto } from '@proto'
 import type { Proto } from '@proto'
 import { WA_APP_STATE_KDF_INFO } from '@protocol/constants'
-import { bytesToBase64 } from '@util/base64'
-import { concatBytes, EMPTY_BYTES, TEXT_DECODER, TEXT_ENCODER, uint8Equal } from '@util/bytes'
+import { bytesToBase64 } from '@util/bytes'
+import {
+    concatBytes,
+    EMPTY_BYTES,
+    intToBytes,
+    TEXT_DECODER,
+    TEXT_ENCODER,
+    uint8Equal
+} from '@util/bytes'
 import { setBoundedMapEntry } from '@util/collections'
+import { normalizeNonNegativeInteger } from '@util/primitives'
 
 interface WaAppStateDerivedKeys {
     readonly indexKey: Uint8Array
@@ -59,8 +66,10 @@ export class WaAppStateCrypto {
 
     public constructor(derivedKeysCacheMaxSize = DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE) {
         this.derivedKeysCache = new Map()
-        this.derivedKeysCacheMaxSize =
-            this.normalizeDerivedKeysCacheMaxSize(derivedKeysCacheMaxSize)
+        this.derivedKeysCacheMaxSize = normalizeNonNegativeInteger(
+            derivedKeysCacheMaxSize,
+            DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE
+        )
     }
 
     public clearCache(): void {
@@ -222,7 +231,7 @@ export class WaAppStateCrypto {
         const derivedKeys = await this.deriveKeys(keyData)
         const payload = concatBytes([
             ltHash,
-            toNetworkOrder64(version),
+            intToBytes(8, version),
             TEXT_ENCODER.encode(collectionName)
         ])
         const key = await importHmacKey(derivedKeys.snapshotMacKey)
@@ -240,7 +249,7 @@ export class WaAppStateCrypto {
         const payload = concatBytes([
             snapshotMac,
             ...valueMacs,
-            toNetworkOrder64(version),
+            intToBytes(8, version),
             TEXT_ENCODER.encode(collectionName)
         ])
         const key = await importHmacKey(derivedKeys.patchMacKey)
@@ -348,13 +357,6 @@ export class WaAppStateCrypto {
         const key = await importHmacSha512Key(valueMacKey)
         const full = await hmacSign(key, concatBytes([associatedData, cipherWithIv, octetLength]))
         return full.slice(0, APP_STATE_VALUE_MAC_LENGTH)
-    }
-
-    private normalizeDerivedKeysCacheMaxSize(value: number | undefined): number {
-        if (!Number.isFinite(value)) {
-            return DEFAULT_DERIVED_KEYS_CACHE_MAX_SIZE
-        }
-        return Math.max(0, Math.trunc(value as number))
     }
 
     private touchDerivedKeysCacheEntry(cacheKey: string, keys: WaAppStateDerivedKeys): void {

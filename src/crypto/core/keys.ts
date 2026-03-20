@@ -1,4 +1,5 @@
 import { SERIALIZED_PUB_KEY_PREFIX } from '@crypto/core/constants'
+import { assertByteLength } from '@util/bytes'
 
 /**
  * Converts a 32-byte raw public key to 33-byte serialized format (with 0x05 prefix)
@@ -10,9 +11,7 @@ export function toSerializedPubKey(key: Uint8Array): Uint8Array {
         }
         return key
     }
-    if (key.length !== 32) {
-        throw new Error(`invalid signal public key length ${key.length}`)
-    }
+    assertByteLength(key, 32, `invalid signal public key length ${key.length}`)
     const out = new Uint8Array(33)
     out[0] = SERIALIZED_PUB_KEY_PREFIX
     out.set(key, 1)

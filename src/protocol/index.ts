@@ -1,32 +1,4 @@
-export { getWaCompanionPlatformId, WA_BROWSERS, WA_COMPANION_PLATFORM_IDS } from '@protocol/browser'
-export { WA_SIGNALING, WA_PAIRING_KDF_INFO } from '@protocol/auth'
-export {
-    WA_DISCONNECT_REASONS,
-    WA_LOGOUT_REASONS,
-    WA_READY_STATES,
-    WA_STREAM_SIGNALING
-} from '@protocol/stream'
-export { WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/nodes'
-export { WA_MESSAGE_TAGS, WA_MESSAGE_TYPES, WA_RETRYABLE_ACK_CODES } from '@protocol/message'
-export {
-    WA_APP_STATE_COLLECTIONS,
-    WA_APP_STATE_COLLECTION_STATES,
-    WA_APP_STATE_CHAT_MUTATION_ACTIONS,
-    WA_APP_STATE_CHAT_MUTATION_SPECS,
-    WA_APP_STATE_ERROR_CODES,
-    WA_APP_STATE_KDF_INFO,
-    WA_APP_STATE_KEY_TYPES,
-    WA_APP_STATE_SYNC_DATA_TYPE
-} from '@protocol/appstate'
-export { getWaMediaHkdfInfo, WA_MEDIA_HKDF_INFO, WA_PREVIEW_MEDIA_HKDF_INFO } from '@protocol/media'
-export {
-    WA_ACCOUNT_SYNC_PROTOCOLS,
-    WA_DIRTY_PROTOCOLS,
-    WA_DIRTY_TYPES,
-    WA_SUPPORTED_DIRTY_TYPES
-} from '@protocol/dirty'
-export { WA_GROUP_NOTIFICATION_TAGS, WA_NOTIFICATION_TYPES } from '@protocol/notification'
-export { WA_DEFAULTS } from '@protocol/defaults'
+export * from '@protocol/constants'
 export {
     getLoginIdentity,
     isGroupJid,

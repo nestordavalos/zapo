@@ -10,7 +10,7 @@ import type { Proto } from '@proto'
 import { WA_DEFAULTS } from '@protocol/constants'
 import { buildMediaConnIq } from '@transport/node/builders/media'
 import type { BinaryNode } from '@transport/types'
-import { bytesToBase64UrlSafe } from '@util/base64'
+import { bytesToBase64UrlSafe } from '@util/bytes'
 import { TEXT_DECODER, toBytesView } from '@util/bytes'
 import { toError } from '@util/primitives'
 

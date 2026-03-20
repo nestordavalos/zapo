@@ -78,11 +78,11 @@ export class WaRetryReplayService {
             return 'ineligible'
         }
 
-        const encrypted = await this.signalProtocol.encryptMessage(
+        const encrypted = await this.options.signalProtocol.encryptMessage(
             parseSignalAddressFromJid(requesterJid),
             payload.plaintext
         )
-        await this.messageClient.sendEncrypted({
+        await this.options.messageClient.sendEncrypted({
             to: requesterJid,
             encType: encrypted.type,
             ciphertext: encrypted.ciphertext,
@@ -101,16 +101,16 @@ export class WaRetryReplayService {
         const plaintext =
             (await this.maybeWrapGroupRetryPlaintextForSelfDevice(payload, requesterJid)) ??
             payload.plaintext
-        const encrypted = await this.signalProtocol.encryptMessage(
+        const encrypted = await this.options.signalProtocol.encryptMessage(
             parseSignalAddressFromJid(requesterJid),
             plaintext
         )
         let deviceIdentity: Uint8Array | undefined
 
         if (encrypted.type === 'pkmsg') {
-            const signedIdentity = this.getCurrentSignedIdentity()
+            const signedIdentity = this.options.getCurrentSignedIdentity()
             if (!signedIdentity) {
-                this.logger.warn(
+                this.options.logger.warn(
                     'retry request rejected: missing signed identity for pkmsg group retry'
                 )
                 return 'ineligible'
@@ -129,7 +129,7 @@ export class WaRetryReplayService {
             deviceIdentity
         })
 
-        await this.messageClient.sendMessageNode(retryNode)
+        await this.options.messageClient.sendMessageNode(retryNode)
         return 'resent'
     }
 
@@ -145,7 +145,7 @@ export class WaRetryReplayService {
         if (normalizeDeviceJid(payload.to) !== normalizeDeviceJid(requesterJid)) {
             return 'ineligible'
         }
-        await this.messageClient.sendEncrypted({
+        await this.options.messageClient.sendEncrypted({
             to: requesterJid,
             encType: payload.encType,
             ciphertext: payload.ciphertext,
@@ -176,7 +176,7 @@ export class WaRetryReplayService {
         if (!this.isOpaqueReplayCompatible(replayNode, requesterJid)) {
             return 'ineligible'
         }
-        await this.messageClient.sendMessageNode(replayNode)
+        await this.options.messageClient.sendMessageNode(replayNode)
         return 'resent'
     }
 
@@ -193,11 +193,14 @@ export class WaRetryReplayService {
             const wrapped = wrapDeviceSentMessage(message, payload.to)
             return writeRandomPadMax16(proto.Message.encode(wrapped).finish())
         } catch (error) {
-            this.logger.warn('retry request failed to wrap deviceSent payload for self requester', {
-                requester: requesterJid,
-                to: payload.to,
-                message: toError(error).message
-            })
+            this.options.logger.warn(
+                'retry request failed to wrap deviceSent payload for self requester',
+                {
+                    requester: requesterJid,
+                    to: payload.to,
+                    message: toError(error).message
+                }
+            )
             return null
         }
     }
@@ -213,22 +216,6 @@ export class WaRetryReplayService {
             return true
         }
         return false
-    }
-
-    private get logger(): Logger {
-        return this.options.logger
-    }
-
-    private get messageClient(): WaMessageClient {
-        return this.options.messageClient
-    }
-
-    private get signalProtocol(): SignalProtocol {
-        return this.options.signalProtocol
-    }
-
-    private getCurrentSignedIdentity(): Proto.IADVSignedDeviceIdentity | null | undefined {
-        return this.options.getCurrentSignedIdentity()
     }
 
     private isOpaqueReplayCompatible(node: BinaryNode, requesterJid: string): boolean {

@@ -6,24 +6,7 @@ import type {
 import { proto } from '@proto'
 import { asBytes, asNumber, asOptionalBytes, asString } from '@util/coercion'
 
-export interface AppStateSyncKeyRow extends Record<string, unknown> {
-    readonly key_id: unknown
-    readonly key_data: unknown
-    readonly timestamp: unknown
-    readonly fingerprint: unknown
-}
-
-export interface AppStateCollectionVersionRow extends Record<string, unknown> {
-    readonly collection: unknown
-    readonly version: unknown
-    readonly hash: unknown
-}
-
-export interface AppStateCollectionValueRow extends Record<string, unknown> {
-    readonly collection: unknown
-    readonly index_mac_hex: unknown
-    readonly value_mac: unknown
-}
+type SqliteRow = Readonly<Record<string, unknown>>
 
 export function encodeAppStateFingerprint(
     fingerprint: WaAppStateSyncKey['fingerprint']
@@ -49,9 +32,7 @@ export function decodeAppStateFingerprint(
     }
 }
 
-export function decodeAppStateSyncKeys(
-    rows: readonly AppStateSyncKeyRow[]
-): readonly WaAppStateSyncKey[] {
+export function decodeAppStateSyncKeys(rows: readonly SqliteRow[]): readonly WaAppStateSyncKey[] {
     return rows.map((row) => ({
         keyId: asBytes(row.key_id, 'appstate_sync_keys.key_id'),
         keyData: asBytes(row.key_data, 'appstate_sync_keys.key_data'),
@@ -61,8 +42,8 @@ export function decodeAppStateSyncKeys(
 }
 
 export function decodeAppStateCollections(
-    versionRows: readonly AppStateCollectionVersionRow[],
-    valueRows: readonly AppStateCollectionValueRow[]
+    versionRows: readonly SqliteRow[],
+    valueRows: readonly SqliteRow[]
 ): WaAppStateStoreData['collections'] {
     const valueMapByCollection = new Map<string, Record<string, Uint8Array>>()
     for (const row of valueRows) {

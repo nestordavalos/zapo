@@ -5,21 +5,6 @@ import { SIGNAL_KEY_BUNDLE_TYPE_BYTES } from '@signal/api/constants'
 import type { BinaryNode } from '@transport/types'
 import { intToBytes } from '@util/bytes'
 
-interface BuildRetryReceiptNodeInput {
-    readonly stanzaId: string
-    readonly to: string
-    readonly participant?: string
-    readonly recipient?: string
-    readonly from?: string
-    readonly originalMsgId: string
-    readonly retryCount: number
-    readonly t: string
-    readonly registrationId: number
-    readonly error?: number
-    readonly categoryPeer?: boolean
-    readonly keys?: WaRetryKeyBundle
-}
-
 function buildRetryKeysNode(keys: WaRetryKeyBundle): BinaryNode {
     const content: BinaryNode[] = [
         {
@@ -86,7 +71,20 @@ function buildRetryKeysNode(keys: WaRetryKeyBundle): BinaryNode {
     }
 }
 
-export function buildRetryReceiptNode(input: BuildRetryReceiptNodeInput): BinaryNode {
+export function buildRetryReceiptNode(input: {
+    readonly stanzaId: string
+    readonly to: string
+    readonly participant?: string
+    readonly recipient?: string
+    readonly from?: string
+    readonly originalMsgId: string
+    readonly retryCount: number
+    readonly t: string
+    readonly registrationId: number
+    readonly error?: number
+    readonly categoryPeer?: boolean
+    readonly keys?: WaRetryKeyBundle
+}): BinaryNode {
     const attrs: Record<string, string> = {
         id: input.stanzaId,
         to: input.to,

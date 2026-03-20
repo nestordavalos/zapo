@@ -9,7 +9,7 @@ import type { WaContactStore } from '@store/contracts/contact.store'
 import type { WaMessageStore } from '@store/contracts/message.store'
 import type { WaStoredMessageRecord } from '@store/contracts/message.store'
 import type { WaThreadStore } from '@store/contracts/thread.store'
-import { decodeProtoBytes } from '@util/base64'
+import { decodeProtoBytes } from '@util/bytes'
 import { toBytesView } from '@util/bytes'
 import { longToNumber } from '@util/primitives'
 
@@ -57,20 +57,15 @@ export async function processHistorySyncNotification(
     })
 
     const nowMs = Date.now()
-    let messagesCount = 0
-
-    const conversationPromises: Promise<void>[] = []
-    for (const conversation of historySync.conversations) {
-        conversationPromises.push(
-            persistConversation(deps, conversation, nowMs).then((count) => {
-                messagesCount += count
-            })
-        )
-    }
-
-    const pushnamePromise = persistPushnames(deps, historySync.pushnames, nowMs)
-
-    await Promise.all([...conversationPromises, pushnamePromise])
+    const [messageCounts] = await Promise.all([
+        Promise.all(
+            historySync.conversations.map((conversation) =>
+                persistConversation(deps, conversation, nowMs)
+            )
+        ),
+        persistPushnames(deps, historySync.pushnames, nowMs)
+    ])
+    const messagesCount = messageCounts.reduce((acc, count) => acc + count, 0)
 
     const event: WaHistorySyncChunkEvent = {
         syncType,

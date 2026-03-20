@@ -135,14 +135,14 @@ export class WaMessageDispatchCoordinator {
             node: encodeBinaryNode(node)
         }
         return this.publishWithRetryTracking(
-            {
-                messageIdHint: node.attrs.id,
-                toJid: node.attrs.to,
-                participantJid: node.attrs.participant,
-                recipientJid: node.attrs.recipient,
+            this.createRetryPublishArgs(
+                node.attrs.id,
+                node.attrs.to,
                 messageType,
-                replayPayload
-            },
+                replayPayload,
+                node.attrs.participant,
+                node.attrs.recipient
+            ),
             async () => this.messageClient.publishNode(node, options)
         )
     }
@@ -165,13 +165,13 @@ export class WaMessageDispatchCoordinator {
             participant: input.participant
         }
         return this.publishWithRetryTracking(
-            {
-                messageIdHint: input.id,
-                toJid: input.to,
-                participantJid: input.participant,
-                messageType: input.type ?? 'text',
-                replayPayload
-            },
+            this.createRetryPublishArgs(
+                input.id,
+                input.to,
+                input.type ?? 'text',
+                replayPayload,
+                input.participant
+            ),
             async () => this.messageClient.publishEncrypted(input, options)
         )
     }
@@ -208,13 +208,13 @@ export class WaMessageDispatchCoordinator {
             plaintext: paddedPlaintext
         }
         return this.publishWithRetryTracking(
-            {
-                messageIdHint: input.id,
-                toJid: input.to,
-                participantJid: input.participant,
+            this.createRetryPublishArgs(
+                input.id,
+                input.to,
                 messageType,
-                replayPayload
-            },
+                replayPayload,
+                input.participant
+            ),
             async () =>
                 this.messageClient.publishEncrypted(
                     {
@@ -520,6 +520,31 @@ export class WaMessageDispatchCoordinator {
         return [...deduped.values()]
     }
 
+    private createRetryPublishArgs(
+        messageIdHint: string | undefined,
+        toJid: string | undefined,
+        messageType: string,
+        replayPayload: WaRetryReplayPayload,
+        participantJid?: string,
+        recipientJid?: string
+    ): {
+        readonly messageIdHint?: string
+        readonly toJid?: string
+        readonly participantJid?: string
+        readonly recipientJid?: string
+        readonly messageType: string
+        readonly replayPayload: WaRetryReplayPayload
+    } {
+        return {
+            messageIdHint,
+            toJid,
+            participantJid,
+            recipientJid,
+            messageType,
+            replayPayload
+        }
+    }
+
     private async publishWithRetryTracking(
         args: {
             readonly messageIdHint?: string
@@ -701,12 +726,12 @@ export class WaMessageDispatchCoordinator {
             plaintext
         }
         const result = await this.publishWithRetryTracking(
-            {
-                messageIdHint: sendOptions.id ?? messageNode.attrs.id,
-                toJid: groupJid,
-                messageType: type,
+            this.createRetryPublishArgs(
+                sendOptions.id ?? messageNode.attrs.id,
+                groupJid,
+                type,
                 replayPayload
-            },
+            ),
             async () => this.messageClient.publishNode(messageNode, sendOptions)
         )
         const ackError = result.ack.error
@@ -812,12 +837,12 @@ export class WaMessageDispatchCoordinator {
             plaintext
         }
         const result = await this.publishWithRetryTracking(
-            {
-                messageIdHint: sendOptions.id ?? messageNode.attrs.id,
-                toJid: groupJid,
-                messageType: type,
+            this.createRetryPublishArgs(
+                sendOptions.id ?? messageNode.attrs.id,
+                groupJid,
+                type,
                 replayPayload
-            },
+            ),
             async () => this.messageClient.publishNode(messageNode, sendOptions)
         )
         const distributedAddresses = distributionParticipants.map(
@@ -1318,12 +1343,12 @@ export class WaMessageDispatchCoordinator {
             plaintext
         }
         return this.publishWithRetryTracking(
-            {
-                messageIdHint: sendOptions.id ?? messageNode.attrs.id,
-                toJid: recipientJid,
-                messageType: type,
+            this.createRetryPublishArgs(
+                sendOptions.id ?? messageNode.attrs.id,
+                recipientJid,
+                type,
                 replayPayload
-            },
+            ),
             async () => this.messageClient.publishNode(messageNode, sendOptions)
         )
     }

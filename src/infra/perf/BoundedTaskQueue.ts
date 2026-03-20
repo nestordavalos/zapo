@@ -1,7 +1,7 @@
 type Task<T> = () => Promise<T>
 
-interface QueueItem<T> {
-    readonly task: Task<T>
+interface QueueItem {
+    readonly task: Task<unknown>
     readonly resolve: (value: unknown) => void
     readonly reject: (error: unknown) => void
 }
@@ -18,7 +18,7 @@ export class BoundedTaskQueueFullError extends Error {
 export class BoundedTaskQueue {
     private readonly maxQueueSize: number
     private readonly maxConcurrency: number
-    private readonly queue: Array<QueueItem<unknown>>
+    private readonly queue: Array<QueueItem>
     private head: number
     private running: number
 
@@ -44,7 +44,7 @@ export class BoundedTaskQueue {
 
         return new Promise<T>((resolve, reject) => {
             this.queue.push({
-                task,
+                task: task as Task<unknown>,
                 resolve: (value) => resolve(value as T),
                 reject
             })

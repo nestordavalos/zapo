@@ -27,7 +27,7 @@ import {
     hasNodeChild
 } from '@transport/node/helpers'
 import type { BinaryNode } from '@transport/types'
-import { decodeProtoBytes } from '@util/base64'
+import { decodeProtoBytes } from '@util/bytes'
 import { concatBytes, TEXT_DECODER, uint8Equal } from '@util/bytes'
 
 interface ActivePairingSession {

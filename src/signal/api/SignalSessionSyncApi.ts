@@ -13,6 +13,7 @@ import {
     getNodeChildrenByTag,
     decodeNodeContentBase64OrBytes
 } from '@transport/node/helpers'
+import { assertIqResult } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
 interface SignalSessionSyncApiOptions {
@@ -133,21 +134,7 @@ export class SignalSessionSyncApi {
         node: BinaryNode,
         requestedTargets: readonly SignalSessionSyncTarget[]
     ): readonly SignalSessionKeyBundleResult[] {
-        if (node.tag !== WA_NODE_TAGS.IQ) {
-            throw new Error(`invalid key bundle response tag: ${node.tag}`)
-        }
-        if (node.attrs.type === WA_IQ_TYPES.ERROR) {
-            const errorNode = findNodeChild(node, WA_NODE_TAGS.ERROR)
-            if (!errorNode) {
-                throw new Error(`key bundle iq error for ${node.attrs.id ?? 'unknown id'}`)
-            }
-            const code = errorNode.attrs.code ?? 'unknown'
-            const text = errorNode.attrs.text ?? errorNode.attrs.type ?? 'unknown'
-            throw new Error(`key bundle iq error (${code} ${text})`)
-        }
-        if (node.attrs.type !== WA_IQ_TYPES.RESULT) {
-            throw new Error(`invalid key bundle response type: ${node.attrs.type ?? 'unknown'}`)
-        }
+        assertIqResult(node, 'key bundle')
 
         const listNode = findNodeChild(node, WA_NODE_TAGS.LIST)
         if (!listNode) {

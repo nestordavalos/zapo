@@ -66,11 +66,7 @@ export class WaParticipantsMemoryStore implements WaParticipantsStore {
             this.records.delete(groupJid)
             return null
         }
-        return {
-            groupJid: record.groupJid,
-            participants: record.participants,
-            updatedAtMs: record.updatedAtMs
-        }
+        return record
     }
 
     public async deleteGroupParticipants(groupJid: string): Promise<number> {

@@ -6,6 +6,7 @@ import { decodeExactLength, parseUint } from '@signal/api/codec'
 import { SIGNAL_KEY_BUNDLE_TYPE_LENGTH, SIGNAL_KEY_DATA_LENGTH } from '@signal/api/constants'
 import type { WaSignalStore } from '@store/contracts/signal.store'
 import { findNodeChild, getNodeChildrenByTag } from '@transport/node/helpers'
+import { assertIqResult } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
 export interface SignalIdentitySyncEntry {
@@ -94,21 +95,7 @@ export class SignalIdentitySyncApi {
         node: BinaryNode,
         requestedJids: readonly string[]
     ): readonly SignalIdentitySyncEntry[] {
-        if (node.tag !== WA_NODE_TAGS.IQ) {
-            throw new Error(`invalid identity sync response tag: ${node.tag}`)
-        }
-        if (node.attrs.type === WA_IQ_TYPES.ERROR) {
-            const errorNode = findNodeChild(node, WA_NODE_TAGS.ERROR)
-            if (!errorNode) {
-                throw new Error(`identity sync iq error for ${node.attrs.id ?? 'unknown id'}`)
-            }
-            const code = errorNode.attrs.code ?? 'unknown'
-            const text = errorNode.attrs.text ?? errorNode.attrs.type ?? 'unknown'
-            throw new Error(`identity sync iq error (${code} ${text})`)
-        }
-        if (node.attrs.type !== WA_IQ_TYPES.RESULT) {
-            throw new Error(`invalid identity sync response type: ${node.attrs.type ?? 'unknown'}`)
-        }
+        assertIqResult(node, 'identity sync')
 
         const listNode = findNodeChild(node, WA_NODE_TAGS.LIST)
         if (!listNode) {

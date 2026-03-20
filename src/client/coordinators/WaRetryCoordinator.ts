@@ -465,7 +465,7 @@ export class WaRetryCoordinator {
             await this.signalStore.deleteSession(address)
         }
         if (request.keyBundle) {
-            if (!request.keyBundle.key) {
+            if (!request.keyBundle.key || !request.keyBundle.skey.signature) {
                 return false
             }
             await this.signalProtocol.establishOutgoingSession(address, {

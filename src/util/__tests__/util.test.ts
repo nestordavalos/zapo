@@ -3,7 +3,7 @@ import { Readable } from 'node:stream'
 import test from 'node:test'
 
 import { delay } from '@util/async'
-import { base64ToBytes, bytesToBase64, decodeProtoBytes } from '@util/base64'
+import { base64ToBytesChecked, bytesToBase64, decodeProtoBytes } from '@util/bytes'
 import {
     base64ToBytes as base64ToBytesCore,
     bytesToBase64 as bytesToBase64Core,
@@ -146,8 +146,8 @@ test('base64 wrappers enforce required field semantics', () => {
     const bytes = new Uint8Array([1, 2, 3])
     const encoded = bytesToBase64(bytes)
 
-    assert.deepEqual(base64ToBytes(encoded, 'field'), bytes)
-    assert.throws(() => base64ToBytes('', 'field'), /invalid base64 payload for field/)
+    assert.deepEqual(base64ToBytesChecked(encoded, 'field'), bytes)
+    assert.throws(() => base64ToBytesChecked('', 'field'), /invalid base64 payload for field/)
 
     assert.deepEqual(decodeProtoBytes(bytes, 'proto'), bytes)
     assert.deepEqual(decodeProtoBytes(encoded, 'proto'), bytes)

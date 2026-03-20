@@ -11,20 +11,26 @@ import { EMPTY_BYTES, toBytesView } from '@util/bytes'
  */
 export type CryptoKey = webcrypto.CryptoKey
 
+type HashAlgorithm = 'SHA-1' | 'SHA-256' | 'SHA-512'
+
+async function digestBytes(algorithm: HashAlgorithm, value: Uint8Array): Promise<Uint8Array> {
+    return toBytesView(await webcrypto.subtle.digest(algorithm, value))
+}
+
 // ============================================
 // Hash functions
 // ============================================
 
 export async function sha256(value: Uint8Array): Promise<Uint8Array> {
-    return toBytesView(await webcrypto.subtle.digest('SHA-256', value))
+    return digestBytes('SHA-256', value)
 }
 
 export async function sha1(value: Uint8Array): Promise<Uint8Array> {
-    return toBytesView(await webcrypto.subtle.digest('SHA-1', value))
+    return digestBytes('SHA-1', value)
 }
 
 export async function sha512(value: Uint8Array): Promise<Uint8Array> {
-    return toBytesView(await webcrypto.subtle.digest('SHA-512', value))
+    return digestBytes('SHA-512', value)
 }
 
 export function md5Bytes(input: string): Uint8Array {
@@ -48,12 +54,13 @@ export async function aesGcmEncrypt(
     plaintext: Uint8Array,
     aad: Uint8Array = EMPTY_BYTES
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: nonce, additionalData: aad },
-        key,
-        plaintext
+    return toBytesView(
+        await webcrypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: nonce, additionalData: aad },
+            key,
+            plaintext
+        )
     )
-    return toBytesView(result)
 }
 
 export async function aesGcmDecrypt(
@@ -62,12 +69,13 @@ export async function aesGcmDecrypt(
     ciphertext: Uint8Array,
     aad: Uint8Array = EMPTY_BYTES
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: nonce, additionalData: aad },
-        key,
-        ciphertext
+    return toBytesView(
+        await webcrypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: nonce, additionalData: aad },
+            key,
+            ciphertext
+        )
     )
-    return toBytesView(result)
 }
 
 // ============================================
@@ -86,8 +94,7 @@ export async function aesCbcEncrypt(
     iv: Uint8Array,
     plaintext: Uint8Array
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, plaintext)
-    return toBytesView(result)
+    return toBytesView(await webcrypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, plaintext))
 }
 
 export async function aesCbcDecrypt(
@@ -95,8 +102,7 @@ export async function aesCbcDecrypt(
     iv: Uint8Array,
     ciphertext: Uint8Array
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ciphertext)
-    return toBytesView(result)
+    return toBytesView(await webcrypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ciphertext))
 }
 
 // ============================================
@@ -157,12 +163,9 @@ export async function aesCtrEncrypt(
     counter: Uint8Array,
     plaintext: Uint8Array
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.encrypt(
-        { name: 'AES-CTR', counter, length: 64 },
-        key,
-        plaintext
+    return toBytesView(
+        await webcrypto.subtle.encrypt({ name: 'AES-CTR', counter, length: 64 }, key, plaintext)
     )
-    return toBytesView(result)
 }
 
 export async function aesCtrDecrypt(
@@ -170,12 +173,9 @@ export async function aesCtrDecrypt(
     counter: Uint8Array,
     ciphertext: Uint8Array
 ): Promise<Uint8Array> {
-    const result = await webcrypto.subtle.decrypt(
-        { name: 'AES-CTR', counter, length: 64 },
-        key,
-        ciphertext
+    return toBytesView(
+        await webcrypto.subtle.decrypt({ name: 'AES-CTR', counter, length: 64 }, key, ciphertext)
     )
-    return toBytesView(result)
 }
 
 // ============================================

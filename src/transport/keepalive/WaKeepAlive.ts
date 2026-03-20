@@ -2,7 +2,7 @@ import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
 import type { BinaryNode } from '@transport/types'
 import type { WaComms } from '@transport/WaComms'
-import { toError } from '@util/primitives'
+import { normalizeNonNegativeInteger, toError } from '@util/primitives'
 
 const KEEPALIVE_DEFAULT_JITTER_RATIO = 0.1
 const KEEPALIVE_DEFAULT_MIN_JITTER_MS = 250
@@ -43,7 +43,10 @@ export class WaKeepAlive {
         this.timeoutMs = options.timeoutMs ?? WA_DEFAULTS.DEAD_SOCKET_TIMEOUT_MS
         this.hostDomain = options.hostDomain ?? WA_DEFAULTS.HOST_DOMAIN
         this.jitterRatio = this.normalizeJitterRatio(options.jitterRatio)
-        this.minJitterMs = this.normalizeMinJitterMs(options.minJitterMs)
+        this.minJitterMs = normalizeNonNegativeInteger(
+            options.minJitterMs,
+            KEEPALIVE_DEFAULT_MIN_JITTER_MS
+        )
         this.timer = null
         this.generation = 0
         this.inFlight = false
@@ -146,13 +149,6 @@ export class WaKeepAlive {
         }
         const normalized = value as number
         return Math.min(Math.max(normalized, 0), KEEPALIVE_MAX_JITTER_RATIO)
-    }
-
-    private normalizeMinJitterMs(value: number | undefined): number {
-        if (!Number.isFinite(value)) {
-            return KEEPALIVE_DEFAULT_MIN_JITTER_MS
-        }
-        return Math.max(0, Math.trunc(value as number))
     }
 
     private computeNextDelayMs(): number {

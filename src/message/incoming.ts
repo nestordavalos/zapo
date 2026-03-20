@@ -18,6 +18,7 @@ import {
     findNodeChild,
     getNodeChildrenByTag
 } from '@transport/node/helpers'
+import { parseOptionalInt } from '@transport/stream/parse'
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
 
@@ -35,33 +36,14 @@ interface WaIncomingMessageAckHandlerOptions {
     readonly emitUnhandledStanza?: (event: WaIncomingUnhandledStanzaEvent) => void
 }
 
-function pickMessageSenderJid(node: BinaryNode): string | undefined {
-    return node.attrs.participant ?? node.attrs.from
-}
-
-function pickMessageChatJid(node: BinaryNode): string | undefined {
-    return node.attrs.from
-}
-
 function parseMessageTimestamp(value: string | undefined): number | undefined {
-    if (!value) {
-        return undefined
-    }
-    const parsed = Number.parseInt(value, 10)
-    if (!Number.isSafeInteger(parsed)) {
-        return undefined
-    }
-    return parsed
+    return parseOptionalInt(value)
 }
 
 function pickNextRetryCount(node: BinaryNode): number {
     const retryNode = findNodeChild(node, 'retry')
-    const countRaw = retryNode?.attrs.count
-    if (!countRaw) {
-        return 1
-    }
-    const parsed = Number.parseInt(countRaw, 10)
-    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    const parsed = parseOptionalInt(retryNode?.attrs.count)
+    if (!parsed || parsed < 1) {
         return 1
     }
     return parsed + 1
@@ -289,7 +271,7 @@ async function decryptAndProcessEncNode(
         const message = normalizeIncomingDecryptedMessage(proto.Message.decode(unpaddedPlaintext))
         await maybeProcessSenderKeyDistributionMessage(senderJid, message, options, node)
         if (shouldEmitIncomingMessage(message)) {
-            const chatJid = pickMessageChatJid(node)
+            const chatJid = node.attrs.from
             options.emitIncomingMessage?.({
                 ...buildBaseIncomingEvent(node),
                 timestampSeconds: parseMessageTimestamp(node.attrs.t),
@@ -337,8 +319,8 @@ export async function handleIncomingMessageAck(
         })
     }
     if (encNodes.length > 0) {
-        const senderJid = pickMessageSenderJid(node)
-        const chatJid = pickMessageChatJid(node)
+        const senderJid = node.attrs.participant ?? node.attrs.from
+        const chatJid = node.attrs.from
         let hasSuccessfulDecrypt = false
         let firstDecryptFailure: DecryptEncNodeResult | null = null
 

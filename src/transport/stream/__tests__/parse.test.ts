@@ -9,7 +9,7 @@ import {
     parseSuccessPersistAttributes
 } from '@transport/stream/parse'
 import type { BinaryNode } from '@transport/types'
-import { bytesToBase64 } from '@util/base64'
+import { bytesToBase64 } from '@util/bytes'
 
 test('parseOptionalInt parses strict unsigned numbers only', () => {
     assert.equal(parseOptionalInt('123'), 123)

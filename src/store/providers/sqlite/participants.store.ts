@@ -119,10 +119,7 @@ function decodeParticipants(raw: unknown): readonly string[] {
     if (!Array.isArray(parsed)) {
         throw new Error('group_participants_cache.participants_json must be an array')
     }
-    return parsed.filter((entry): entry is string => {
-        if (typeof entry !== 'string') {
-            throw new Error('group_participants_cache.participants_json entry must be string')
-        }
-        return true
-    })
+    return parsed.map((entry) =>
+        asString(entry, 'group_participants_cache.participants_json entry')
+    )
 }

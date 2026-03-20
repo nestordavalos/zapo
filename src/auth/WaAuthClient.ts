@@ -25,15 +25,7 @@ interface CredentialsPatchOptions {
     readonly onPersist?: (current: WaAuthCredentials, next: WaAuthCredentials) => void
 }
 
-interface WaAuthClientCallbacks {
-    readonly onQr?: (qr: string, ttlMs: number) => void
-    readonly onPairingCode?: (code: string) => void
-    readonly onPairingRefresh?: (forceManual: boolean) => void
-    readonly onPaired?: (credentials: WaAuthCredentials) => void
-    readonly onError?: (error: Error) => void
-}
-
-interface WaAuthClientDependencies {
+type WaAuthClientDeps = Readonly<{
     readonly logger: Logger
     readonly authStore: WaAuthStore
     readonly signalStore: WaSignalStore
@@ -41,20 +33,26 @@ interface WaAuthClientDependencies {
         readonly sendNode: (node: BinaryNode) => Promise<void>
         readonly query: (node: BinaryNode, timeoutMs?: number) => Promise<BinaryNode>
     }
-    readonly callbacks?: WaAuthClientCallbacks
-}
+    readonly callbacks?: {
+        readonly onQr?: (qr: string, ttlMs: number) => void
+        readonly onPairingCode?: (code: string) => void
+        readonly onPairingRefresh?: (forceManual: boolean) => void
+        readonly onPaired?: (credentials: WaAuthCredentials) => void
+        readonly onError?: (error: Error) => void
+    }
+}>
 
 export class WaAuthClient {
     private readonly options: Readonly<WaAuthClientOptions>
     private readonly logger: Logger
-    private readonly callbacks: WaAuthClientCallbacks
+    private readonly callbacks: NonNullable<WaAuthClientDeps['callbacks']>
     private readonly authStore: WaAuthStore
     private readonly signalStore: WaSignalStore
     private readonly qrFlow: WaQrFlow
     private readonly pairingFlow: WaPairingFlow
     private credentials: WaAuthCredentials | null
 
-    public constructor(options: WaAuthClientOptions, deps: WaAuthClientDependencies) {
+    public constructor(options: WaAuthClientOptions, deps: WaAuthClientDeps) {
         const deviceBrowser = options.deviceBrowser ?? WA_DEFAULTS.DEVICE_BROWSER
         const device = Object.freeze({
             browser: deviceBrowser,
@@ -100,7 +98,7 @@ export class WaAuthClient {
     public getState(connected = false) {
         return {
             connected,
-            registered: this.credentials?.meJid !== null && this.credentials?.meJid !== undefined,
+            registered: hasMeJid(this.credentials),
             hasQr: this.qrFlow.hasQr(),
             hasPairingCode: this.pairingFlow.hasPairingSession()
         }
@@ -119,7 +117,7 @@ export class WaAuthClient {
                 signalStore: this.signalStore
             })
             this.logger.info('auth client credentials ready', {
-                registered: this.credentials.meJid !== null && this.credentials.meJid !== undefined
+                registered: hasMeJid(this.credentials)
             })
             return this.credentials
         })
@@ -210,12 +208,6 @@ export class WaAuthClient {
         )
     }
 
-    public async persistMeLid(meLid: string): Promise<void> {
-        await this.persistSuccessAttributes({
-            meLid
-        })
-    }
-
     public async persistSuccessAttributes(attributes: WaSuccessPersistAttributes): Promise<void> {
         let changes: Record<string, boolean> = {}
         await this.patchCredentials(
@@ -287,26 +279,20 @@ export class WaAuthClient {
     }
 
     public async handleIncomingIqSet(node: BinaryNode): Promise<boolean> {
-        return this.runHandled(async () => {
-            this.logger.trace('auth client handleIncomingIqSet', { id: node.attrs.id })
-            return this.pairingFlow.handleIncomingIqSet(node)
-        })
+        this.logger.trace('auth client handleIncomingIqSet', { id: node.attrs.id })
+        return this.runHandled(() => this.pairingFlow.handleIncomingIqSet(node))
     }
 
     public async handleLinkCodeNotification(node: BinaryNode): Promise<boolean> {
-        return this.runHandled(async () => {
-            this.logger.trace('auth client handleLinkCodeNotification', { id: node.attrs.id })
-            return this.pairingFlow.handleLinkCodeNotification(node)
-        })
+        this.logger.trace('auth client handleLinkCodeNotification', { id: node.attrs.id })
+        return this.runHandled(() => this.pairingFlow.handleLinkCodeNotification(node))
     }
 
     public async handleCompanionRegRefreshNotification(node: BinaryNode): Promise<boolean> {
-        return this.runHandled(async () => {
-            this.logger.trace('auth client handleCompanionRegRefreshNotification', {
-                id: node.attrs.id
-            })
-            return this.pairingFlow.handleCompanionRegRefreshNotification(node)
+        this.logger.trace('auth client handleCompanionRegRefreshNotification', {
+            id: node.attrs.id
         })
+        return this.runHandled(() => this.pairingFlow.handleCompanionRegRefreshNotification(node))
     }
 
     private async patchCredentials(
@@ -334,7 +320,7 @@ export class WaAuthClient {
 
     private async updateCredentials(credentials: WaAuthCredentials): Promise<void> {
         this.logger.trace('auth client update credentials', {
-            registered: credentials.meJid !== null && credentials.meJid !== undefined
+            registered: hasMeJid(credentials)
         })
         this.credentials = credentials
         await persistCredentials(
@@ -358,4 +344,8 @@ export class WaAuthClient {
         this.logger.error('wa auth client error', { message: error.message })
         this.callbacks.onError?.(error)
     }
+}
+
+function hasMeJid(credentials: WaAuthCredentials | null): boolean {
+    return credentials?.meJid !== null && credentials?.meJid !== undefined
 }

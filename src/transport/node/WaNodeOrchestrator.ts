@@ -3,6 +3,8 @@ import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/cons
 import type { BinaryNode } from '@transport/types'
 import { toError } from '@util/primitives'
 
+import { formatNodeIdPrefixFromSeed } from './helpers'
+
 interface PendingNodeQuery {
     readonly resolve: (value: BinaryNode) => void
     readonly reject: (error: Error) => void
@@ -172,10 +174,7 @@ export class WaNodeOrchestrator {
     }
 
     private generateStanzaPrefix(): string {
-        const seed = crypto.getRandomValues(new Uint8Array(4))
-        const left = seed[0] * 256 + seed[1]
-        const right = seed[2] * 256 + seed[3]
-        const prefix = `${left}.${right}-`
+        const prefix = formatNodeIdPrefixFromSeed(crypto.getRandomValues(new Uint8Array(4)))
         this.logger.debug('generated stanza prefix', { prefix })
         return prefix
     }

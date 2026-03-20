@@ -77,34 +77,8 @@ interface EncryptedDownloadStream {
     }>
 }
 
-interface ResolvedTransferRequest {
-    readonly urls: readonly string[]
-    readonly headers: Record<string, string>
-    readonly timeoutMs: number
-}
-
-interface ResolvedProxyTransport {
-    readonly dispatcher?: WaProxyDispatcher
-    readonly agent?: WaProxyAgent
-}
-
 interface OptionalGotModule {
     readonly stream: (url: string, options?: Readonly<Record<string, unknown>>) => Readable
-}
-
-interface PreparedEncryptedUpload {
-    readonly body: Uint8Array | Readable
-    readonly contentLength: number | undefined
-    readonly metadata: Promise<{
-        readonly fileSha256: Uint8Array
-        readonly fileEncSha256: Uint8Array
-    }>
-    cleanup(error: Error): Promise<void>
-}
-
-interface AbortContext {
-    readonly signal: AbortSignal
-    cleanup(): void
 }
 
 function asOptionalGotModule(loaded: unknown): OptionalGotModule | null {
@@ -370,7 +344,13 @@ export class WaMediaTransferClient {
         return this.readAllBytesWithLimit(response.body, maxBytes)
     }
 
-    private resolveProxyTransport(proxy: ResolvedProxyTransport): ResolvedProxyTransport {
+    private resolveProxyTransport(proxy: {
+        readonly dispatcher?: WaProxyDispatcher
+        readonly agent?: WaProxyAgent
+    }): {
+        readonly dispatcher?: WaProxyDispatcher
+        readonly agent?: WaProxyAgent
+    } {
         if (proxy.agent) {
             return { agent: proxy.agent }
         }
@@ -380,7 +360,10 @@ export class WaMediaTransferClient {
     private async transferRequest(
         url: string,
         init: RequestInit,
-        proxy: ResolvedProxyTransport
+        proxy: {
+            readonly dispatcher?: WaProxyDispatcher
+            readonly agent?: WaProxyAgent
+        }
     ): Promise<InternalTransferResponse> {
         if (proxy.agent) {
             return this.gotWithAgent(url, init, proxy.agent)
@@ -553,7 +536,11 @@ export class WaMediaTransferClient {
             'url' | 'directPath' | 'hosts' | 'headers' | 'timeoutMs'
         >,
         extraHeaders?: Readonly<Record<string, string | undefined>>
-    ): ResolvedTransferRequest {
+    ): {
+        readonly urls: readonly string[]
+        readonly headers: Record<string, string>
+        readonly timeoutMs: number
+    } {
         const headers = this.mergeHeaders(request.headers)
         for (const [key, value] of Object.entries(extraHeaders ?? {})) {
             if (value !== undefined) {
@@ -588,7 +575,15 @@ export class WaMediaTransferClient {
     private async prepareEncryptedUpload(
         request: EncryptedUploadRequest,
         mediaKey: Uint8Array
-    ): Promise<PreparedEncryptedUpload> {
+    ): Promise<{
+        readonly body: Uint8Array | Readable
+        readonly contentLength: number | undefined
+        readonly metadata: Promise<{
+            readonly fileSha256: Uint8Array
+            readonly fileEncSha256: Uint8Array
+        }>
+        cleanup(error: Error): Promise<void>
+    }> {
         if (request.plaintext instanceof Uint8Array) {
             const encrypted = await WaMediaCrypto.encryptBytes(
                 request.mediaType,
@@ -734,7 +729,10 @@ export class WaMediaTransferClient {
     private createAbortContext(
         timeoutMs: number,
         externalSignal: AbortSignal | undefined
-    ): AbortContext {
+    ): {
+        readonly signal: AbortSignal
+        cleanup(): void
+    } {
         const controller = new AbortController()
         const timer = setTimeout(() => {
             controller.abort(new Error(`transfer timed out after ${timeoutMs}ms`))

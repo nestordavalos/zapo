@@ -284,16 +284,12 @@ export class SignalDeviceSyncApi {
             const contactNode = findNodeChild(userNode, WA_NODE_TAGS.CONTACT)
             if (!lidNode) {
                 return [
-                    {
-                        jid: normalizedUserJid,
-                        lidJid: null,
-                        phoneJid: normalizedPhoneJid,
-                        exists: this.parseLidSyncContactExists(
-                            contactNode,
-                            normalizedUserJid,
-                            false
-                        )
-                    }
+                    this.buildLidSyncResult(
+                        normalizedUserJid,
+                        normalizedPhoneJid,
+                        contactNode,
+                        null
+                    )
                 ]
             }
             const errorNode = findNodeChild(lidNode, WA_NODE_TAGS.ERROR)
@@ -304,32 +300,38 @@ export class SignalDeviceSyncApi {
                     text: errorNode.attrs.text
                 })
                 return [
-                    {
-                        jid: normalizedUserJid,
-                        lidJid: null,
-                        phoneJid: normalizedPhoneJid,
-                        exists: this.parseLidSyncContactExists(
-                            contactNode,
-                            normalizedUserJid,
-                            false
-                        )
-                    }
+                    this.buildLidSyncResult(
+                        normalizedUserJid,
+                        normalizedPhoneJid,
+                        contactNode,
+                        null
+                    )
                 ]
             }
             const lidJid = lidNode.attrs.val ? this.normalizeUserJid(lidNode.attrs.val) : null
             return [
-                {
-                    jid: normalizedUserJid,
-                    lidJid,
-                    phoneJid: normalizedPhoneJid,
-                    exists: this.parseLidSyncContactExists(
-                        contactNode,
-                        normalizedUserJid,
-                        lidJid !== null
-                    )
-                }
+                this.buildLidSyncResult(normalizedUserJid, normalizedPhoneJid, contactNode, lidJid)
             ]
         })
+    }
+
+    private buildLidSyncResult(
+        jid: string,
+        phoneJid: string | null,
+        contactNode: BinaryNode | undefined,
+        lidJid: string | null
+    ): {
+        readonly jid: string
+        readonly lidJid: string | null
+        readonly phoneJid: string | null
+        readonly exists: boolean
+    } {
+        return {
+            jid,
+            lidJid,
+            phoneJid,
+            exists: this.parseLidSyncContactExists(contactNode, jid, lidJid !== null)
+        }
     }
 
     private parseLidSyncContactExists(

@@ -1,5 +1,5 @@
 import type { BinaryNode } from '@transport/types'
-import { base64ToBytes, TEXT_ENCODER } from '@util/bytes'
+import { base64ToBytesChecked, TEXT_ENCODER } from '@util/bytes'
 
 export function getNodeChildren(node: BinaryNode): readonly BinaryNode[] {
     return Array.isArray(node.content) ? node.content : []
@@ -42,10 +42,16 @@ export function decodeNodeContentBase64OrBytes(
         throw new Error(`missing binary node content for ${field}`)
     }
     if (typeof value === 'string') {
-        return base64ToBytes(value)
+        return base64ToBytesChecked(value, field)
     }
     if (value instanceof Uint8Array) {
         return value
     }
     throw new Error(`missing binary node content for ${field}`)
+}
+
+export function formatNodeIdPrefixFromSeed(seed: Uint8Array): string {
+    const left = ((seed[0] << 8) | seed[1]) >>> 0
+    const right = ((seed[2] << 8) | seed[3]) >>> 0
+    return `${left}.${right}-`
 }

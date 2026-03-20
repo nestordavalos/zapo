@@ -41,3 +41,10 @@ export function longToNumber(value: number | { toNumber(): number } | null | und
     }
     return assertSafeInteger(typeof value === 'number' ? value : value.toNumber(), '', 'zero')
 }
+
+export function normalizeNonNegativeInteger(value: number | undefined, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return fallback
+    }
+    return Math.max(0, Math.trunc(value))
+}

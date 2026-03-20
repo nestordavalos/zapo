@@ -12,7 +12,7 @@ import {
 import { WaAppStateCrypto } from '@appstate/WaAppStateCrypto'
 import { WaAppStateSyncClient } from '@appstate/WaAppStateSyncClient'
 import { parseCollectionState, parseSyncResponse } from '@appstate/WaAppStateSyncResponseParser'
-import type { Logger } from '@infra/log/types'
+import { createNoopLogger } from '@infra/log/types'
 import type { Proto } from '@proto'
 import { proto } from '@proto'
 import {
@@ -217,14 +217,7 @@ test('appstate sync client builds outgoing patch without inline version field', 
         }
     }
 
-    const logger: Logger = {
-        level: 'trace',
-        trace() {},
-        debug() {},
-        info() {},
-        warn() {},
-        error() {}
-    }
+    const logger = createNoopLogger()
 
     const client = new WaAppStateSyncClient({
         logger,
@@ -308,14 +301,7 @@ test('appstate sync client uploads mutation for persisted empty version zero sta
         }
     }
 
-    const logger: Logger = {
-        level: 'trace',
-        trace() {},
-        debug() {},
-        info() {},
-        warn() {},
-        error() {}
-    }
+    const logger = createNoopLogger()
 
     const client = new WaAppStateSyncClient({
         logger,
@@ -388,14 +374,7 @@ test('appstate sync client marks empty successful bootstrap as initialized for n
         }
     }
 
-    const logger: Logger = {
-        level: 'trace',
-        trace() {},
-        debug() {},
-        info() {},
-        warn() {},
-        error() {}
-    }
+    const logger = createNoopLogger()
 
     const client = new WaAppStateSyncClient({
         logger,

@@ -1,5 +1,5 @@
 import type { Logger } from '@infra/log/types'
-import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS } from '@protocol/constants'
+import { WA_DEFAULTS, WA_NODE_TAGS } from '@protocol/constants'
 import { splitJid } from '@protocol/jid'
 import { decodeExactLength, parseUint } from '@signal/api/codec'
 import {
@@ -15,7 +15,7 @@ import {
     findNodeChild,
     getNodeChildrenByTag
 } from '@transport/node/helpers'
-import { parseIqError } from '@transport/node/query'
+import { assertIqResult } from '@transport/node/query'
 import type { BinaryNode } from '@transport/types'
 
 interface SignalMissingPreKeysSyncApiOptions {
@@ -96,18 +96,7 @@ export class SignalMissingPreKeysSyncApi {
         node: BinaryNode,
         requestedTargets: readonly SignalMissingPreKeysTarget[]
     ): readonly SignalMissingPreKeysUserResult[] {
-        if (node.tag !== WA_NODE_TAGS.IQ) {
-            throw new Error(`invalid missing prekeys response tag: ${node.tag}`)
-        }
-        if (node.attrs.type === WA_IQ_TYPES.ERROR) {
-            const error = parseIqError(node)
-            throw new Error(`missing prekeys iq failed (${error.code}: ${error.text})`)
-        }
-        if (node.attrs.type !== WA_IQ_TYPES.RESULT) {
-            throw new Error(
-                `invalid missing prekeys response type: ${node.attrs.type ?? 'unknown'}`
-            )
-        }
+        assertIqResult(node, 'missing prekeys')
 
         const listNode = findNodeChild(node, WA_NODE_TAGS.LIST)
         if (!listNode) {

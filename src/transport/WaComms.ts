@@ -5,7 +5,7 @@ import { WA_DEFAULTS } from '@protocol/constants'
 import { WaNoiseSession } from '@transport/noise/WaNoiseSession'
 import type { SocketCloseInfo, WaCommsConfig, WaCommsState } from '@transport/types'
 import { WaWebSocket } from '@transport/WaWebSocket'
-import { bytesToBase64UrlSafe } from '@util/base64'
+import { bytesToBase64UrlSafe } from '@util/bytes'
 import { EMPTY_BYTES } from '@util/bytes'
 import { toError } from '@util/primitives'
 

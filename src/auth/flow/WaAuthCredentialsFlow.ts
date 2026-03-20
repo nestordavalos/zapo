@@ -24,19 +24,19 @@ export async function loadOrCreateCredentials(
     args.logger.trace('auth credentials loadOrCreate start')
     const existing = await args.authStore.load()
     if (!existing) {
-        const credentials = await createAndPersistFreshCredentials(args)
+        const credentials = await createFreshAndPersistCredentials(args)
         args.logger.info('created fresh auth credentials')
         return credentials
     }
 
     args.logger.debug('auth credentials loaded from store', {
-        registered: existing.meJid !== null && existing.meJid !== undefined,
+        registered: isRegistered(existing),
         hasServerStaticKey:
             existing.serverStaticKey !== null && existing.serverStaticKey !== undefined
     })
     if (!existing.meJid && !(await hasValidSignedPreKey(args.logger, existing))) {
         args.logger.warn('signed pre-key is invalid, regenerating credentials')
-        const fresh = await createAndPersistFreshCredentials(args)
+        const fresh = await createFreshAndPersistCredentials(args)
         args.logger.info('regenerated credentials due to invalid signed pre-key')
         return fresh
     }
@@ -51,7 +51,7 @@ export async function persistCredentials(
     credentials: WaAuthCredentials
 ): Promise<void> {
     args.logger.trace('persisting auth credentials', {
-        registered: credentials.meJid !== null && credentials.meJid !== undefined
+        registered: isRegistered(credentials)
     })
     await args.authStore.save(credentials)
 }
@@ -65,8 +65,9 @@ export function buildCommsConfig(
         'deviceBrowser' | 'deviceOsDisplayName' | 'requireFullSync'
     >
 ): WaCommsConfig {
-    const registered = credentials.meJid !== null && credentials.meJid !== undefined
-    const loginIdentity = registered ? getLoginIdentity(credentials.meJid) : null
+    const meJid = credentials.meJid
+    const registered = meJid !== null && meJid !== undefined
+    const loginIdentity = registered ? getLoginIdentity(meJid) : null
     const wsProxy = socketOptions.proxy?.ws
     logger.debug('building comms config from credentials', {
         registered,
@@ -129,11 +130,12 @@ async function createFreshCredentials(
     }
 }
 
-async function createAndPersistFreshCredentials(
+async function createFreshAndPersistCredentials(
     args: WaAuthCredentialsFlowArgs
 ): Promise<WaAuthCredentials> {
     const credentials = await createFreshCredentials(args.signalStore, args.logger)
-    await persistFreshCredentials(args, credentials)
+    await args.authStore.save(credentials)
+    await restoreSignalStore(args.signalStore, credentials)
     return credentials
 }
 
@@ -167,10 +169,6 @@ async function restoreSignalStore(
     await signalStore.setServerHasPreKeys(credentials.serverHasPreKeys === true)
 }
 
-async function persistFreshCredentials(
-    args: WaAuthCredentialsFlowArgs,
-    credentials: WaAuthCredentials
-): Promise<void> {
-    await args.authStore.save(credentials)
-    await restoreSignalStore(args.signalStore, credentials)
+function isRegistered(credentials: WaAuthCredentials): boolean {
+    return credentials.meJid !== null && credentials.meJid !== undefined
 }

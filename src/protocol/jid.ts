@@ -1,12 +1,7 @@
 import { WA_DEFAULTS } from '@protocol/constants'
 import type { SignalAddress } from '@signal/types'
 
-export interface ParsedJid {
-    readonly user: string
-    readonly server: string
-}
-
-export function splitJid(jid: string): ParsedJid {
+export function splitJid(jid: string): { readonly user: string; readonly server: string } {
     const atIndex = jid.indexOf('@')
     if (atIndex < 1 || atIndex >= jid.length - 1) {
         throw new Error(`invalid jid: ${jid}`)

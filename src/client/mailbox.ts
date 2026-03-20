@@ -17,16 +17,15 @@ async function persistContacts(
     event: WaIncomingMessageEvent,
     nowMs: number
 ): Promise<void> {
-    const candidateJids = new Set<string>()
-    if (event.senderJid) {
-        candidateJids.add(event.senderJid)
-    }
-    if (event.rawNode.attrs.participant) {
-        candidateJids.add(event.rawNode.attrs.participant)
+    const candidateJids = [event.senderJid, event.rawNode.attrs.participant].filter(
+        (jid): jid is string => !!jid
+    )
+    if (candidateJids.length === 0) {
+        return
     }
 
     await Promise.all(
-        Array.from(candidateJids, (jid) => contactStore.upsert({ jid, lastUpdatedMs: nowMs }))
+        [...new Set(candidateJids)].map((jid) => contactStore.upsert({ jid, lastUpdatedMs: nowMs }))
     )
 }
 

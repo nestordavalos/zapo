@@ -31,7 +31,7 @@ function readNodeTextContent(node: BinaryNode | undefined): string | undefined {
     return undefined
 }
 
-function parseParticipants(node: BinaryNode): readonly WaGroupEventParticipant[] {
+export function parseParticipants(node: BinaryNode): readonly WaGroupEventParticipant[] {
     return getNodeChildrenByTag(node, WA_NODE_TAGS.PARTICIPANT).map((participantNode) => ({
         jid: participantNode.attrs.jid,
         role: participantNode.attrs.type,

@@ -27,7 +27,6 @@ import type { WaMediaConn } from '@media/types'
 import { WaMediaTransferClient } from '@media/WaMediaTransferClient'
 import { handleIncomingMessageAck } from '@message/incoming'
 import { WaMessageClient } from '@message/WaMessageClient'
-import type { Proto } from '@proto'
 import { getWaCompanionPlatformId, WA_DEFAULTS } from '@protocol/constants'
 import type { WaRetryDecryptFailureContext } from '@retry/types'
 import { SignalDeviceSyncApi } from '@signal/api/SignalDeviceSyncApi'
@@ -217,21 +216,6 @@ function createAuthClient(input: {
             }
         }
     )
-}
-
-function createCurrentAuthGetters(authClient: WaAuthClient): {
-    readonly getCurrentCredentials: () => ReturnType<WaAuthClient['getCurrentCredentials']>
-    readonly getCurrentMeJid: () => string | null | undefined
-    readonly getCurrentMeLid: () => string | null | undefined
-    readonly getCurrentSignedIdentity: () => Proto.IADVSignedDeviceIdentity | null | undefined
-} {
-    const getCurrentCredentials = () => authClient.getCurrentCredentials()
-    return {
-        getCurrentCredentials,
-        getCurrentMeJid: () => getCurrentCredentials()?.meJid,
-        getCurrentMeLid: () => getCurrentCredentials()?.meLid,
-        getCurrentSignedIdentity: () => getCurrentCredentials()?.signedIdentity
-    }
 }
 
 function createIncomingMessageAckOptions(input: {
@@ -470,8 +454,10 @@ export function buildWaClientDependencies(input: {
         defaultTimeoutMs: options.signalFetchKeyBundlesTimeoutMs
     })
     const authClient = createAuthClient({ options, logger, sessionStore, host })
-    const { getCurrentCredentials, getCurrentMeJid, getCurrentMeLid, getCurrentSignedIdentity } =
-        createCurrentAuthGetters(authClient)
+    const getCurrentCredentials = authClient.getCurrentCredentials.bind(authClient)
+    const getCurrentMeJid = () => getCurrentCredentials()?.meJid
+    const getCurrentMeLid = () => getCurrentCredentials()?.meLid
+    const getCurrentSignedIdentity = () => getCurrentCredentials()?.signedIdentity
     const groupCoordinator = createGroupCoordinator({
         queryWithContext: host.queryWithContext
     })

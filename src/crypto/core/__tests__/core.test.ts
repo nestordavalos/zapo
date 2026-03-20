@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { assert32, decodeBase64Url } from '@crypto/core/encoding'
 import { hkdf, hkdfSplit } from '@crypto/core/hkdf'
 import {
     prependVersion,
@@ -17,11 +16,10 @@ import {
     hmacSign,
     importAesGcmKey,
     importHmacKey,
-    md5Bytes,
     sha256
 } from '@crypto/core/primitives'
 import { randomBytesAsync, randomIntAsync } from '@crypto/core/random'
-import { bytesToBase64UrlSafe } from '@util/bytes'
+import { assertByteLength, bytesToBase64UrlSafe, decodeBase64Url } from '@util/bytes'
 
 test('hkdf derivation and split are deterministic with same inputs', async () => {
     const ikm = new Uint8Array(32).fill(1)
@@ -71,7 +69,6 @@ test('primitive crypto functions encrypt/decrypt and sign deterministically', as
 
     const digest = await sha256(new Uint8Array([7]))
     assert.equal(digest.length, 32)
-    assert.equal(md5Bytes('abc').length, 16)
 })
 
 test('encoding and random helpers are compatible with URL-safe payloads', async () => {
@@ -80,8 +77,11 @@ test('encoding and random helpers are compatible with URL-safe payloads', async 
     const decoded = decodeBase64Url(encoded, 'field')
     assert.deepEqual(decoded, raw)
 
-    assert.doesNotThrow(() => assert32(raw, 'x'))
-    assert.throws(() => assert32(new Uint8Array(31), 'x'), /must be 32 bytes/)
+    assert.doesNotThrow(() => assertByteLength(raw, 32, 'x must be 32 bytes'))
+    assert.throws(
+        () => assertByteLength(new Uint8Array(31), 32, 'x must be 32 bytes'),
+        /must be 32 bytes/
+    )
 
     const randomBytes = await randomBytesAsync(24)
     assert.equal(randomBytes.length, 24)

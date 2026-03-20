@@ -1,9 +1,8 @@
 import { webcrypto } from 'node:crypto'
 
-import { assert32, decodeBase64Url } from '@crypto/core/encoding'
 import { ED25519_PKCS8_PREFIX } from '@crypto/curves/constants'
 import { pkcs8FromRawPrivate, type SignalKeyPair, type SubtleKeyPair } from '@crypto/curves/types'
-import { toBytesView } from '@util/bytes'
+import { assertByteLength, decodeBase64Url, toBytesView } from '@util/bytes'
 
 export class Ed25519 {
     static async generateKeyPair(): Promise<SignalKeyPair> {
@@ -19,7 +18,7 @@ export class Ed25519 {
     }
 
     static async keyPairFromPrivateKey(privKey: Uint8Array): Promise<SignalKeyPair> {
-        assert32(privKey, 'ed25519 private key')
+        assertByteLength(privKey, 32, 'ed25519 private key must be 32 bytes')
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
             pkcs8FromRawPrivate(ED25519_PKCS8_PREFIX, privKey),
@@ -35,7 +34,7 @@ export class Ed25519 {
     }
 
     static async sign(message: Uint8Array, privKey: Uint8Array): Promise<Uint8Array> {
-        assert32(privKey, 'ed25519 private key')
+        assertByteLength(privKey, 32, 'ed25519 private key must be 32 bytes')
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
             pkcs8FromRawPrivate(ED25519_PKCS8_PREFIX, privKey),
@@ -52,7 +51,7 @@ export class Ed25519 {
         signature: Uint8Array,
         pubKey: Uint8Array
     ): Promise<boolean> {
-        assert32(pubKey, 'ed25519 public key')
+        assertByteLength(pubKey, 32, 'ed25519 public key must be 32 bytes')
         const publicKey = await webcrypto.subtle.importKey(
             'raw',
             pubKey,

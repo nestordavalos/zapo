@@ -50,35 +50,35 @@ export class PinoLogger implements Logger {
     }
 
     public trace(message: string, context?: Readonly<Record<string, unknown>>): void {
-        this.writeLog('trace', message, context)
+        this.write('trace', message, context)
     }
 
     public debug(message: string, context?: Readonly<Record<string, unknown>>): void {
-        this.writeLog('debug', message, context)
+        this.write('debug', message, context)
     }
 
     public info(message: string, context?: Readonly<Record<string, unknown>>): void {
-        this.writeLog('info', message, context)
+        this.write('info', message, context)
     }
 
     public warn(message: string, context?: Readonly<Record<string, unknown>>): void {
-        this.writeLog('warn', message, context)
+        this.write('warn', message, context)
     }
 
     public error(message: string, context?: Readonly<Record<string, unknown>>): void {
-        this.writeLog('error', message, context)
+        this.write('error', message, context)
     }
 
-    private writeLog(
-        method: keyof Pick<PinoLikeLogger, 'trace' | 'debug' | 'info' | 'warn' | 'error'>,
+    private write(
+        level: LogLevel,
         message: string,
         context?: Readonly<Record<string, unknown>>
     ): void {
         if (!context || Object.keys(context).length === 0) {
-            this.logger[method](message)
+            this.logger[level](message)
             return
         }
-        this.logger[method](context, message)
+        this.logger[level](context, message)
     }
 }
 

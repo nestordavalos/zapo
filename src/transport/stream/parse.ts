@@ -2,7 +2,7 @@ import type { WaSuccessPersistAttributes } from '@auth/types'
 import { WA_STREAM_SIGNALING } from '@protocol/constants'
 import { findNodeChild, hasNodeChild } from '@transport/node/helpers'
 import type { BinaryNode } from '@transport/types'
-import { base64ToBytes } from '@util/base64'
+import { base64ToBytesChecked } from '@util/bytes'
 
 export type WaStreamControlNodeResult =
     | { readonly kind: 'xmlstreamend' }
@@ -91,7 +91,7 @@ export function parseCompanionEncStatic(
         return undefined
     }
     try {
-        return base64ToBytes(value, 'success.companion_enc_static')
+        return base64ToBytesChecked(value, 'success.companion_enc_static')
     } catch (error) {
         if (error instanceof Error) {
             onError?.(error)

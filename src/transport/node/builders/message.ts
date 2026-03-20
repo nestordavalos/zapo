@@ -7,7 +7,7 @@ interface EncryptedParticipant {
     readonly ciphertext: Uint8Array
 }
 
-interface BuildDirectMessageFanoutNodeInput {
+type DirectMessageFanoutInput = {
     readonly to: string
     readonly type: string
     readonly id?: string
@@ -16,30 +16,16 @@ interface BuildDirectMessageFanoutNodeInput {
     readonly reportingNode?: BinaryNode
 }
 
-interface BuildGroupSenderKeyMessageNodeInput {
-    readonly to: string
-    readonly type: string
+type GroupMessageFanoutInput = DirectMessageFanoutInput & {
+    readonly phash?: string
+    readonly addressingMode?: 'pn' | 'lid'
+}
+
+type GroupSenderKeyMessageInput = GroupMessageFanoutInput & {
     readonly groupCiphertext: Uint8Array
-    readonly id?: string
-    readonly phash?: string
-    readonly addressingMode?: 'pn' | 'lid'
-    readonly participants: readonly EncryptedParticipant[]
-    readonly deviceIdentity?: Uint8Array
-    readonly reportingNode?: BinaryNode
 }
 
-interface BuildGroupDirectMessageNodeInput {
-    readonly to: string
-    readonly type: string
-    readonly id?: string
-    readonly phash?: string
-    readonly addressingMode?: 'pn' | 'lid'
-    readonly participants: readonly EncryptedParticipant[]
-    readonly deviceIdentity?: Uint8Array
-    readonly reportingNode?: BinaryNode
-}
-
-interface BuildGroupRetryMessageNodeInput {
+type GroupRetryMessageInput = {
     readonly to: string
     readonly type: string
     readonly id: string
@@ -50,7 +36,7 @@ interface BuildGroupRetryMessageNodeInput {
     readonly deviceIdentity?: Uint8Array
 }
 
-export function buildDirectMessageFanoutNode(input: BuildDirectMessageFanoutNodeInput): BinaryNode {
+export function buildDirectMessageFanoutNode(input: DirectMessageFanoutInput): BinaryNode {
     if (input.participants.length === 0) {
         throw new Error('direct message fanout requires at least one participant')
     }
@@ -103,9 +89,7 @@ export function buildDirectMessageFanoutNode(input: BuildDirectMessageFanoutNode
     }
 }
 
-export function buildGroupSenderKeyMessageNode(
-    input: BuildGroupSenderKeyMessageNodeInput
-): BinaryNode {
+export function buildGroupSenderKeyMessageNode(input: GroupSenderKeyMessageInput): BinaryNode {
     const attrs: Record<string, string> = {
         to: input.to,
         type: input.type
@@ -169,7 +153,7 @@ export function buildGroupSenderKeyMessageNode(
     }
 }
 
-export function buildGroupDirectMessageNode(input: BuildGroupDirectMessageNodeInput): BinaryNode {
+export function buildGroupDirectMessageNode(input: GroupMessageFanoutInput): BinaryNode {
     if (input.participants.length === 0) {
         throw new Error('group direct message requires at least one participant')
     }
@@ -360,7 +344,7 @@ export function buildInboundReceiptAckNode(receiptNode: BinaryNode): BinaryNode 
     }
 }
 
-export function buildGroupRetryMessageNode(input: BuildGroupRetryMessageNodeInput): BinaryNode {
+export function buildGroupRetryMessageNode(input: GroupRetryMessageInput): BinaryNode {
     const content: BinaryNode[] = [
         {
             tag: WA_NODE_TAGS.PARTICIPANTS,

@@ -1,16 +1,13 @@
 import { webcrypto } from 'node:crypto'
 
-import { assert32, decodeBase64Url } from '@crypto/core/encoding'
 import { X25519_PKCS8_PREFIX } from '@crypto/curves/constants'
 import { pkcs8FromRawPrivate, type SignalKeyPair, type SubtleKeyPair } from '@crypto/curves/types'
 import { bigIntToBytesLE, bytesToBigIntLE } from '@crypto/math/le'
 import { FIELD_P, mod, modInv } from '@crypto/math/mod'
-import { toBytesView } from '@util/bytes'
+import { assertByteLength, decodeBase64Url, toBytesView } from '@util/bytes'
 
 export function clampCurvePrivateKeyInPlace(privateKey: Uint8Array): Uint8Array {
-    if (privateKey.length !== 32) {
-        throw new Error(`invalid curve25519 private key length ${privateKey.length}`)
-    }
+    assertByteLength(privateKey, 32, `invalid curve25519 private key length ${privateKey.length}`)
     privateKey[0] &= 248
     privateKey[31] &= 127
     privateKey[31] |= 64
@@ -18,9 +15,11 @@ export function clampCurvePrivateKeyInPlace(privateKey: Uint8Array): Uint8Array 
 }
 
 export function montgomeryToEdwardsPublic(curvePublicKey: Uint8Array, signBit: number): Uint8Array {
-    if (curvePublicKey.length !== 32) {
-        throw new Error(`invalid curve25519 public key length ${curvePublicKey.length}`)
-    }
+    assertByteLength(
+        curvePublicKey,
+        32,
+        `invalid curve25519 public key length ${curvePublicKey.length}`
+    )
     const x = bytesToBigIntLE(curvePublicKey)
     if (x === FIELD_P - 1n) {
         throw new Error('invalid curve25519 low-order public key')
@@ -44,7 +43,7 @@ export class X25519 {
     }
 
     static async keyPairFromPrivateKey(privKey: Uint8Array): Promise<SignalKeyPair> {
-        assert32(privKey, 'x25519 private key')
+        assertByteLength(privKey, 32, 'x25519 private key must be 32 bytes')
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
             pkcs8FromRawPrivate(X25519_PKCS8_PREFIX, privKey),
@@ -60,8 +59,8 @@ export class X25519 {
     }
 
     static async scalarMult(privKey: Uint8Array, pubKey: Uint8Array): Promise<Uint8Array> {
-        assert32(privKey, 'x25519 private key')
-        assert32(pubKey, 'x25519 public key')
+        assertByteLength(privKey, 32, 'x25519 private key must be 32 bytes')
+        assertByteLength(pubKey, 32, 'x25519 public key must be 32 bytes')
 
         const privateKey = await webcrypto.subtle.importKey(
             'pkcs8',
