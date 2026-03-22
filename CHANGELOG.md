@@ -1,5 +1,13 @@
 # zapo-js
 
+## 0.1.2
+
+### Patch Changes
+
+- Release 0.1.2 with protocol/client refactors, hot-path performance improvements, and
+  reliability updates across message dispatch, sender-key distribution, app-state, and store
+  batching flows.
+
 ## 0.1.1
 
 ### Patch Changes
