@@ -1,5 +1,6 @@
 import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
+import { canonicalizeSignalJid } from '@protocol/jid'
 import { decodeExactLength, parseUint } from '@signal/api/codec'
 import {
     SIGNAL_KEY_DATA_LENGTH,
@@ -7,6 +8,7 @@ import {
     SIGNAL_REGISTRATION_ID_LENGTH,
     SIGNAL_SIGNATURE_LENGTH
 } from '@signal/api/constants'
+import { registerParsedResultByRawAndCanonicalKey } from '@signal/api/result-map'
 import type { SignalPreKeyBundle } from '@signal/types'
 import {
     findNodeChild,
@@ -39,6 +41,10 @@ export type SignalSessionKeyBundleResult =
           readonly errorCode?: string
           readonly errorText: string
       }
+
+function isKeyBundleResultPreferred(result: SignalSessionKeyBundleResult): boolean {
+    return 'bundle' in result
+}
 
 export class SignalSessionSyncApi {
     private readonly logger: SignalSessionSyncApiOptions['logger']
@@ -154,6 +160,7 @@ export class SignalSessionSyncApi {
         }
 
         const parsedByJid = new Map<string, SignalSessionKeyBundleResult>()
+        const parsedByCanonicalJid = new Map<string, SignalSessionKeyBundleResult>()
         for (let index = 0; index < userNodes.length; index += 1) {
             const userNode = userNodes[index]
             const jid = userNode.attrs.jid
@@ -163,29 +170,44 @@ export class SignalSessionSyncApi {
 
             const userErrorNode = findNodeChild(userNode, WA_NODE_TAGS.ERROR)
             if (userErrorNode) {
-                parsedByJid.set(jid, {
+                registerParsedResultByRawAndCanonicalKey(
+                    parsedByJid,
+                    parsedByCanonicalJid,
                     jid,
-                    errorCode: userErrorNode.attrs.code,
-                    errorText: userErrorNode.attrs.text ?? 'unknown'
-                })
+                    canonicalizeSignalJid(jid, this.hostDomain),
+                    {
+                        jid,
+                        errorCode: userErrorNode.attrs.code,
+                        errorText: userErrorNode.attrs.text ?? 'unknown'
+                    },
+                    isKeyBundleResultPreferred
+                )
                 continue
             }
 
             const parsed = this.parseUserKeyBundle(userNode)
-            parsedByJid.set(jid, {
+            registerParsedResultByRawAndCanonicalKey(
+                parsedByJid,
+                parsedByCanonicalJid,
                 jid,
-                bundle: parsed.bundle,
-                ...(parsed.deviceIdentity ? { deviceIdentity: parsed.deviceIdentity } : {})
-            })
+                canonicalizeSignalJid(jid, this.hostDomain),
+                {
+                    jid,
+                    bundle: parsed.bundle,
+                    ...(parsed.deviceIdentity ? { deviceIdentity: parsed.deviceIdentity } : {})
+                },
+                isKeyBundleResultPreferred
+            )
         }
 
         const output: SignalSessionKeyBundleResult[] = new Array(requestedTargets.length)
         for (let index = 0; index < requestedTargets.length; index += 1) {
             const target = requestedTargets[index]
-            output[index] = parsedByJid.get(target.jid) ?? {
-                jid: target.jid,
-                errorText: 'missing key bundle user in response'
-            }
+            output[index] = parsedByJid.get(target.jid) ??
+                parsedByCanonicalJid.get(canonicalizeSignalJid(target.jid, this.hostDomain)) ?? {
+                    jid: target.jid,
+                    errorText: 'missing key bundle user in response'
+                }
         }
         return output
     }

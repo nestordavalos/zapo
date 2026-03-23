@@ -716,6 +716,54 @@ test('signal device sync api maps user response by pn_jid when jid differs', asy
     ])
 })
 
+test('signal device sync api maps hosted.lid user response to requested lid user', async () => {
+    const api = new SignalDeviceSyncApi({
+        logger: createLogger(),
+        query: async () =>
+            iqResult([
+                {
+                    tag: WA_NODE_TAGS.USYNC,
+                    attrs: {},
+                    content: [
+                        {
+                            tag: WA_NODE_TAGS.LIST,
+                            attrs: {},
+                            content: [
+                                {
+                                    tag: WA_NODE_TAGS.USER,
+                                    attrs: { jid: '6116570308623@hosted.lid' },
+                                    content: [
+                                        {
+                                            tag: WA_NODE_TAGS.DEVICES,
+                                            attrs: {},
+                                            content: [
+                                                {
+                                                    tag: 'device-list',
+                                                    attrs: {},
+                                                    content: [
+                                                        { tag: 'device', attrs: { id: '99' } }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ])
+    })
+
+    const result = await api.syncDeviceList(['6116570308623@lid'])
+    assert.deepEqual(result, [
+        {
+            jid: '6116570308623@lid',
+            deviceJids: ['6116570308623:99@hosted.lid']
+        }
+    ])
+})
+
 test('signal identity sync api parses result list and stores remote identities', async () => {
     const signalStore = new WaSignalMemoryStore()
     const api = new SignalIdentitySyncApi({
@@ -772,6 +820,42 @@ test('signal identity sync api parses result list and stores remote identities',
     )
     assert.ok(persisted)
     assert.equal(persisted.length, 33)
+})
+
+test('signal identity sync api maps hosted.lid response jid to requested lid jid', async () => {
+    const api = new SignalIdentitySyncApi({
+        logger: createLogger(),
+        query: async () =>
+            iqResult([
+                {
+                    tag: WA_NODE_TAGS.LIST,
+                    attrs: {},
+                    content: [
+                        {
+                            tag: WA_NODE_TAGS.USER,
+                            attrs: { jid: '6116570308623:99@hosted.lid' },
+                            content: [
+                                {
+                                    tag: WA_NODE_TAGS.IDENTITY,
+                                    attrs: {},
+                                    content: makeBytes(SIGNAL_KEY_DATA_LENGTH, 9)
+                                },
+                                {
+                                    tag: WA_NODE_TAGS.TYPE,
+                                    attrs: {},
+                                    content: SIGNAL_KEY_BUNDLE_TYPE_BYTES
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ])
+    })
+
+    const result = await api.syncIdentityKeys(['6116570308623:99@lid'])
+    assert.equal(result.length, 1)
+    assert.equal(result[0].jid, '6116570308623:99@lid')
+    assert.equal(result[0].identity.length, 32)
 })
 
 test('signal missing-prekeys api parses bundles and preserves per-user errors', async () => {
@@ -890,6 +974,79 @@ test('signal missing-prekeys api parses bundles and preserves per-user errors', 
     }
 })
 
+test('signal missing-prekeys api maps hosted.lid user response to requested lid user', async () => {
+    const api = new SignalMissingPreKeysSyncApi({
+        logger: createLogger(),
+        query: async () =>
+            iqResult([
+                {
+                    tag: WA_NODE_TAGS.LIST,
+                    attrs: {},
+                    content: [
+                        {
+                            tag: WA_NODE_TAGS.USER,
+                            attrs: { jid: '6116570308623@hosted.lid' },
+                            content: [
+                                {
+                                    tag: WA_NODE_TAGS.DEVICE,
+                                    attrs: { id: '99' },
+                                    content: [
+                                        {
+                                            tag: WA_NODE_TAGS.REGISTRATION,
+                                            attrs: {},
+                                            content: intToBytes(SIGNAL_REGISTRATION_ID_LENGTH, 987)
+                                        },
+                                        {
+                                            tag: WA_NODE_TAGS.IDENTITY,
+                                            attrs: {},
+                                            content: makeBytes(SIGNAL_KEY_DATA_LENGTH, 4)
+                                        },
+                                        {
+                                            tag: WA_NODE_TAGS.SKEY,
+                                            attrs: {},
+                                            content: [
+                                                {
+                                                    tag: WA_NODE_TAGS.ID,
+                                                    attrs: {},
+                                                    content: intToBytes(SIGNAL_KEY_ID_LENGTH, 33)
+                                                },
+                                                {
+                                                    tag: WA_NODE_TAGS.VALUE,
+                                                    attrs: {},
+                                                    content: makeBytes(SIGNAL_KEY_DATA_LENGTH, 5)
+                                                },
+                                                {
+                                                    tag: WA_NODE_TAGS.SIGNATURE,
+                                                    attrs: {},
+                                                    content: makeBytes(SIGNAL_SIGNATURE_LENGTH, 6)
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ])
+    })
+
+    const result = await api.fetchMissingPreKeys([
+        {
+            userJid: '6116570308623@lid',
+            devices: [{ deviceId: 99, registrationId: 987 }]
+        }
+    ])
+
+    assert.equal(result.length, 1)
+    assert.ok('devices' in result[0])
+    if ('devices' in result[0]) {
+        assert.equal(result[0].devices.length, 1)
+        assert.equal(result[0].devices[0].deviceJid, '6116570308623:99@lid')
+        assert.equal(result[0].devices[0].bundle.signedKey.id, 33)
+    }
+})
+
 test('signal session sync api merges duplicate targets and returns user errors', async () => {
     let capturedRequest: unknown = null
     const api = new SignalSessionSyncApi({
@@ -984,6 +1141,65 @@ test('signal session sync api merges duplicate targets and returns user errors',
         assert.equal(result[1].errorCode, '404')
         assert.equal(result[1].errorText, 'not found')
     }
+})
+
+test('signal session sync api maps hosted.lid response to lid request jid', async () => {
+    const requestedJid = '6116570308623:99@lid'
+    const responseJid = '6116570308623:99@hosted.lid'
+    const api = new SignalSessionSyncApi({
+        logger: createLogger(),
+        query: async () =>
+            iqResult([
+                {
+                    tag: WA_NODE_TAGS.LIST,
+                    attrs: {},
+                    content: [
+                        {
+                            tag: WA_NODE_TAGS.USER,
+                            attrs: { jid: responseJid },
+                            content: [
+                                {
+                                    tag: WA_NODE_TAGS.REGISTRATION,
+                                    attrs: {},
+                                    content: intToBytes(SIGNAL_REGISTRATION_ID_LENGTH, 777)
+                                },
+                                {
+                                    tag: WA_NODE_TAGS.IDENTITY,
+                                    attrs: {},
+                                    content: makeBytes(SIGNAL_KEY_DATA_LENGTH, 1)
+                                },
+                                {
+                                    tag: WA_NODE_TAGS.SKEY,
+                                    attrs: {},
+                                    content: [
+                                        {
+                                            tag: WA_NODE_TAGS.ID,
+                                            attrs: {},
+                                            content: intToBytes(SIGNAL_KEY_ID_LENGTH, 8)
+                                        },
+                                        {
+                                            tag: WA_NODE_TAGS.VALUE,
+                                            attrs: {},
+                                            content: makeBytes(SIGNAL_KEY_DATA_LENGTH, 2)
+                                        },
+                                        {
+                                            tag: WA_NODE_TAGS.SIGNATURE,
+                                            attrs: {},
+                                            content: makeBytes(SIGNAL_SIGNATURE_LENGTH, 3)
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ])
+    })
+
+    const result = await api.fetchKeyBundle({ jid: requestedJid })
+    assert.equal(result.jid, responseJid)
+    assert.equal(result.bundle.regId, 777)
+    assert.equal(result.bundle.signedKey.id, 8)
 })
 
 test('signal rotate key api uploads signed prekeys and maps error codes', async () => {

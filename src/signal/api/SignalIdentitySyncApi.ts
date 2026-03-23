@@ -1,7 +1,7 @@
 import { toSerializedPubKey } from '@crypto/core/keys'
 import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_IQ_TYPES, WA_NODE_TAGS, WA_XMLNS } from '@protocol/constants'
-import { normalizeDeviceJid, parseSignalAddressFromJid } from '@protocol/jid'
+import { canonicalizeSignalJid, parseSignalAddressFromJid } from '@protocol/jid'
 import { decodeExactLength, parseUint } from '@signal/api/codec'
 import { SIGNAL_KEY_BUNDLE_TYPE_LENGTH, SIGNAL_KEY_DATA_LENGTH } from '@signal/api/constants'
 import type { WaSignalStore } from '@store/contracts/signal.store'
@@ -46,7 +46,7 @@ export class SignalIdentitySyncApi {
         const normalizedTargets: string[] = []
         const dedup = new Set<string>()
         for (let index = 0; index < targetJids.length; index += 1) {
-            const normalized = normalizeDeviceJid(targetJids[index])
+            const normalized = canonicalizeSignalJid(targetJids[index], this.hostDomain)
             if (dedup.has(normalized)) {
                 continue
             }
@@ -132,7 +132,9 @@ export class SignalIdentitySyncApi {
         const parsed: SignalIdentitySyncEntry[] = []
         for (let index = 0; index < userNodes.length; index += 1) {
             const userNode = userNodes[index]
-            const jid = userNode.attrs.jid ? normalizeDeviceJid(userNode.attrs.jid) : ''
+            const jid = userNode.attrs.jid
+                ? canonicalizeSignalJid(userNode.attrs.jid, this.hostDomain)
+                : ''
             if (!jid || !requested.has(jid)) {
                 continue
             }

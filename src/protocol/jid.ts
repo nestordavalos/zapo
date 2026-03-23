@@ -1,6 +1,11 @@
 import { WA_DEFAULTS } from '@protocol/constants'
 import type { SignalAddress } from '@signal/types'
 
+const JID_HOSTED_DEVICE_ID = 99
+const JID_SERVER_HOSTED = 'hosted'
+const JID_SERVER_HOSTED_LID = 'hosted.lid'
+const JID_SERVER_LID = 'lid'
+
 function scanJid(jid: string): {
     readonly atIndex: number
     readonly colonIndex: number
@@ -72,6 +77,34 @@ export function parseSignalAddressFromJid(jid: string): SignalAddress {
     return { user: jid.slice(0, colonIndex), server, device }
 }
 
+export function canonicalizeSignalServer(
+    server: string,
+    hostDomain: string = WA_DEFAULTS.HOST_DOMAIN
+): string {
+    if (server === JID_SERVER_HOSTED) return hostDomain
+    if (server === JID_SERVER_HOSTED_LID) return JID_SERVER_LID
+    return server
+}
+
+export function canonicalizeSignalJid(
+    jid: string,
+    hostDomain: string = WA_DEFAULTS.HOST_DOMAIN
+): string {
+    const address = parseSignalAddressFromJid(jid)
+    const server = canonicalizeSignalServer(address.server ?? WA_DEFAULTS.HOST_DOMAIN, hostDomain)
+    if (address.device === 0) return `${address.user}@${server}`
+    return `${address.user}:${address.device}@${server}`
+}
+
+export function canonicalizeSignalUserJid(
+    jid: string,
+    hostDomain: string = WA_DEFAULTS.HOST_DOMAIN
+): string {
+    const address = parseSignalAddressFromJid(jid)
+    const server = canonicalizeSignalServer(address.server ?? WA_DEFAULTS.HOST_DOMAIN, hostDomain)
+    return `${address.user}@${server}`
+}
+
 export function toUserJid(jid: string): string {
     const address = parseSignalAddressFromJid(jid)
     return `${address.user}@${address.server}`
@@ -81,6 +114,52 @@ export function normalizeDeviceJid(jid: string): string {
     const address = parseSignalAddressFromJid(jid)
     if (address.device === 0) return `${address.user}@${address.server}`
     return `${address.user}:${address.device}@${address.server}`
+}
+
+export function isHostedDeviceId(deviceId: number): boolean {
+    return deviceId === JID_HOSTED_DEVICE_ID
+}
+
+export function isHostedServer(server: string): boolean {
+    return server === JID_SERVER_HOSTED || server === JID_SERVER_HOSTED_LID
+}
+
+export function isHostedDeviceJid(jid: string): boolean {
+    const { user, server } = splitJid(jid)
+    if (isHostedServer(server)) {
+        return true
+    }
+    const colonIndex = user.indexOf(':')
+    if (colonIndex < 0) {
+        return false
+    }
+    const deviceId = Number.parseInt(user.slice(colonIndex + 1), 10)
+    return Number.isSafeInteger(deviceId) && isHostedDeviceId(deviceId)
+}
+
+export function buildDeviceJid(
+    user: string,
+    normalizedServer: string,
+    deviceId: number,
+    options: {
+        readonly rawServer?: string
+        readonly isHosted?: boolean
+    } = {}
+): string {
+    if (options.isHosted === true) {
+        if (!isHostedDeviceId(deviceId)) {
+            return `${user}:${deviceId}@${normalizedServer}`
+        }
+        const hostedServer =
+            options.rawServer === JID_SERVER_HOSTED_LID || normalizedServer === JID_SERVER_LID
+                ? JID_SERVER_HOSTED_LID
+                : JID_SERVER_HOSTED
+        return `${user}:${JID_HOSTED_DEVICE_ID}@${hostedServer}`
+    }
+    if (deviceId === 0) {
+        return `${user}@${normalizedServer}`
+    }
+    return `${user}:${deviceId}@${normalizedServer}`
 }
 
 export function getLoginIdentity(meJid: string): {

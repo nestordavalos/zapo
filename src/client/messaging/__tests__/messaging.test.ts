@@ -69,6 +69,62 @@ test('device fanout resolver picks meLid only when recipient is lid', () => {
     )
 })
 
+test('device fanout resolver keeps hosted devices in direct fanout', async () => {
+    const resolver = createDeviceFanoutResolver({
+        signalDeviceSync: {
+            syncDeviceList: async () => [
+                {
+                    jid: '6116570308623@lid',
+                    deviceJids: ['6116570308623:1@lid', '6116570308623:99@hosted.lid']
+                },
+                {
+                    jid: '551100000000@lid',
+                    deviceJids: ['551100000000:1@lid', '551100000000:2@lid']
+                }
+            ]
+        } as never,
+        getCurrentMeJid: () => '551100000000:1@s.whatsapp.net',
+        getCurrentMeLid: () => '551100000000:1@lid',
+        logger: createLogger()
+    })
+
+    const fanout = await resolver.resolveDirectFanoutDeviceJids(
+        '6116570308623:1@lid',
+        '551100000000:1@lid'
+    )
+    assert.deepEqual(fanout, [
+        '6116570308623:1@lid',
+        '6116570308623:99@hosted.lid',
+        '551100000000:2@lid'
+    ])
+})
+
+test('device fanout resolver excludes hosted devices in group fanout', async () => {
+    const resolver = createDeviceFanoutResolver({
+        signalDeviceSync: {
+            syncDeviceList: async () => [
+                {
+                    jid: '6116570308623@lid',
+                    deviceJids: ['6116570308623:1@lid', '6116570308623:99@hosted.lid']
+                },
+                {
+                    jid: '551188888888@s.whatsapp.net',
+                    deviceJids: ['551188888888@s.whatsapp.net', '551188888888:99@hosted']
+                }
+            ]
+        } as never,
+        getCurrentMeJid: () => '551100000000:1@s.whatsapp.net',
+        getCurrentMeLid: () => null,
+        logger: createLogger()
+    })
+
+    const fanout = await resolver.resolveGroupParticipantDeviceJids([
+        '6116570308623@lid',
+        '551188888888@s.whatsapp.net'
+    ])
+    assert.deepEqual(fanout, ['6116570308623:1@lid', '551188888888@s.whatsapp.net'])
+})
+
 test('group participants cache mutates membership from events', async () => {
     const participantsStore = new WaParticipantsMemoryStore(60_000)
     try {

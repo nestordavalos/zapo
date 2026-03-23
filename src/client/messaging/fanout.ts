@@ -1,5 +1,5 @@
 import type { Logger } from '@infra/log/types'
-import { normalizeDeviceJid, splitJid, toUserJid } from '@protocol/jid'
+import { isHostedDeviceJid, normalizeDeviceJid, splitJid, toUserJid } from '@protocol/jid'
 import type { SignalDeviceSyncApi } from '@signal/api/SignalDeviceSyncApi'
 import { toError } from '@util/primitives'
 
@@ -131,6 +131,9 @@ export function createDeviceFanoutResolver(options: {
 
                 for (const deviceJid of entry.deviceJids) {
                     const normalizedDeviceJid = normalizeDeviceJid(deviceJid)
+                    if (isHostedDeviceJid(normalizedDeviceJid)) {
+                        continue
+                    }
                     if (meDeviceJids.has(normalizedDeviceJid)) {
                         continue
                     }

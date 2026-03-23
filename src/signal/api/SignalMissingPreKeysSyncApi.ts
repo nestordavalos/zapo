@@ -1,6 +1,6 @@
 import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_NODE_TAGS } from '@protocol/constants'
-import { splitJid } from '@protocol/jid'
+import { canonicalizeSignalUserJid, splitJid } from '@protocol/jid'
 import { decodeExactLength, parseUint } from '@signal/api/codec'
 import {
     SIGNAL_KEY_DATA_LENGTH,
@@ -9,6 +9,7 @@ import {
     SIGNAL_SIGNATURE_LENGTH
 } from '@signal/api/constants'
 import { buildMissingPreKeysFetchIq } from '@signal/api/prekeys'
+import { registerParsedResultByRawAndCanonicalKey } from '@signal/api/result-map'
 import type { SignalPreKeyBundle } from '@signal/types'
 import {
     decodeNodeContentBase64OrBytes,
@@ -50,6 +51,10 @@ export type SignalMissingPreKeysUserResult =
           readonly errorCode?: number
           readonly errorText: string
       }
+
+function isMissingPreKeysUserResultPreferred(result: SignalMissingPreKeysUserResult): boolean {
+    return 'devices' in result
+}
 
 export class SignalMissingPreKeysSyncApi {
     private readonly logger: SignalMissingPreKeysSyncApiOptions['logger']
@@ -94,6 +99,7 @@ export class SignalMissingPreKeysSyncApi {
         }
         const users = getNodeChildrenByTag(listNode, WA_NODE_TAGS.USER)
         const parsedByJid = new Map<string, SignalMissingPreKeysUserResult>()
+        const parsedByCanonicalJid = new Map<string, SignalMissingPreKeysUserResult>()
 
         for (let index = 0; index < users.length; index += 1) {
             const userNode = users[index]
@@ -101,31 +107,47 @@ export class SignalMissingPreKeysSyncApi {
             if (!userJid) {
                 continue
             }
+            const canonicalUserJid = canonicalizeSignalUserJid(userJid)
 
             const userErrorNode = findNodeChild(userNode, WA_NODE_TAGS.ERROR)
             if (userErrorNode) {
                 const parsedCode = Number.parseInt(userErrorNode.attrs.code ?? '', 10)
-                parsedByJid.set(userJid, {
+                registerParsedResultByRawAndCanonicalKey(
+                    parsedByJid,
+                    parsedByCanonicalJid,
                     userJid,
-                    errorCode: Number.isSafeInteger(parsedCode) ? parsedCode : undefined,
-                    errorText: userErrorNode.attrs.text ?? userErrorNode.attrs.type ?? 'unknown'
-                })
+                    canonicalUserJid,
+                    {
+                        userJid,
+                        errorCode: Number.isSafeInteger(parsedCode) ? parsedCode : undefined,
+                        errorText: userErrorNode.attrs.text ?? userErrorNode.attrs.type ?? 'unknown'
+                    },
+                    isMissingPreKeysUserResultPreferred
+                )
                 continue
             }
 
-            parsedByJid.set(userJid, {
+            registerParsedResultByRawAndCanonicalKey(
+                parsedByJid,
+                parsedByCanonicalJid,
                 userJid,
-                devices: this.parseUserDevices(userNode, userJid)
-            })
+                canonicalUserJid,
+                {
+                    userJid,
+                    devices: this.parseUserDevices(userNode, canonicalUserJid)
+                },
+                isMissingPreKeysUserResultPreferred
+            )
         }
 
         const results = new Array<SignalMissingPreKeysUserResult>(requestedTargets.length)
         for (let index = 0; index < requestedTargets.length; index += 1) {
             const target = requestedTargets[index]
-            results[index] = parsedByJid.get(target.userJid) ?? {
-                userJid: target.userJid,
-                errorText: 'missing user in key_fetch response'
-            }
+            results[index] = parsedByJid.get(target.userJid) ??
+                parsedByCanonicalJid.get(canonicalizeSignalUserJid(target.userJid)) ?? {
+                    userJid: target.userJid,
+                    errorText: 'missing user in key_fetch response'
+                }
         }
         return results
     }

@@ -1,6 +1,11 @@
 import type { Logger } from '@infra/log/types'
 import { WA_DEFAULTS, WA_NODE_TAGS, WA_USYNC_CONTEXTS } from '@protocol/constants'
-import { parseSignalAddressFromJid, splitJid } from '@protocol/jid'
+import {
+    buildDeviceJid,
+    canonicalizeSignalUserJid,
+    isHostedDeviceId,
+    splitJid
+} from '@protocol/jid'
 import type { WaDeviceListStore } from '@store/contracts/device-list.store'
 import { buildUsyncIq } from '@transport/node/builders/usync'
 import { findNodeChild, getNodeChildrenByTag } from '@transport/node/helpers'
@@ -286,7 +291,7 @@ export class SignalDeviceSyncApi {
             }
             parsed.push({
                 jid: normalizedUserJid,
-                deviceJids: this.parseUserDeviceJids(userNode, normalizedUserJid)
+                deviceJids: this.parseUserDeviceJids(userNode, userJid, normalizedUserJid)
             })
         }
         return parsed
@@ -414,7 +419,11 @@ export class SignalDeviceSyncApi {
         return contactNode.attrs.type === 'in'
     }
 
-    private parseUserDeviceJids(userNode: BinaryNode, userJid: string): readonly string[] {
+    private parseUserDeviceJids(
+        userNode: BinaryNode,
+        rawUserJid: string,
+        normalizedUserJid: string
+    ): readonly string[] {
         const devicesNode = findNodeChild(userNode, WA_NODE_TAGS.DEVICES)
         if (!devicesNode) {
             return []
@@ -422,7 +431,7 @@ export class SignalDeviceSyncApi {
         const errorNode = findNodeChild(devicesNode, WA_NODE_TAGS.ERROR)
         if (errorNode) {
             this.logger.warn('signal device sync user error', {
-                jid: userJid,
+                jid: normalizedUserJid,
                 code: errorNode.attrs.code,
                 text: errorNode.attrs.text
             })
@@ -434,7 +443,8 @@ export class SignalDeviceSyncApi {
             return []
         }
 
-        const parsedUser = splitJid(userJid)
+        const parsedNormalizedUser = splitJid(normalizedUserJid)
+        const parsedRawUser = splitJid(rawUserJid)
         const dedup = new Set<string>()
         for (const deviceNode of getNodeChildrenByTag(deviceListNode, 'device')) {
             const parsedId = deviceNode.attrs.id
@@ -443,7 +453,14 @@ export class SignalDeviceSyncApi {
             if (!Number.isSafeInteger(parsedId) || parsedId < 0) {
                 continue
             }
-            dedup.add(this.toDeviceJid(parsedUser.user, parsedUser.server, parsedId))
+            const isHostedDevice =
+                isHostedDeviceId(parsedId) || deviceNode.attrs.is_hosted === 'true'
+            dedup.add(
+                buildDeviceJid(parsedNormalizedUser.user, parsedNormalizedUser.server, parsedId, {
+                    rawServer: parsedRawUser.server,
+                    isHosted: isHostedDevice
+                })
+            )
         }
         const deviceJids: string[] = []
         for (const jid of dedup.values()) {
@@ -467,14 +484,6 @@ export class SignalDeviceSyncApi {
     }
 
     private normalizeUserJid(jid: string): string {
-        const address = parseSignalAddressFromJid(jid)
-        return `${address.user}@${address.server}`
-    }
-
-    private toDeviceJid(user: string, server: string, deviceId: number): string {
-        if (deviceId === 0) {
-            return `${user}@${server}`
-        }
-        return `${user}:${deviceId}@${server}`
+        return canonicalizeSignalUserJid(jid, this.hostDomain)
     }
 }

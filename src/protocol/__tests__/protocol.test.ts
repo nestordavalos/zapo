@@ -10,7 +10,14 @@ import {
     getWaMediaHkdfInfo
 } from '@protocol/constants'
 import {
+    buildDeviceJid,
+    canonicalizeSignalJid,
+    canonicalizeSignalServer,
+    canonicalizeSignalUserJid,
     getLoginIdentity,
+    isHostedDeviceId,
+    isHostedDeviceJid,
+    isHostedServer,
     isBroadcastJid,
     isGroupJid,
     isGroupOrBroadcastJid,
@@ -58,6 +65,36 @@ test('jid type detection and device handling', () => {
     assert.equal(toUserJid('5511:3@s.whatsapp.net'), '5511@s.whatsapp.net')
     assert.equal(normalizeDeviceJid('5511:0@s.whatsapp.net'), '5511@s.whatsapp.net')
     assert.equal(normalizeDeviceJid('5511:5@s.whatsapp.net'), '5511:5@s.whatsapp.net')
+
+    assert.equal(canonicalizeSignalServer('hosted'), 's.whatsapp.net')
+    assert.equal(canonicalizeSignalServer('hosted.lid'), 'lid')
+    assert.equal(canonicalizeSignalJid('5511:99@hosted.lid'), '5511:99@lid')
+    assert.equal(canonicalizeSignalJid('5511:99@hosted'), '5511:99@s.whatsapp.net')
+    assert.equal(canonicalizeSignalUserJid('5511:99@hosted.lid'), '5511@lid')
+
+    assert.equal(isHostedServer('hosted'), true)
+    assert.equal(isHostedServer('hosted.lid'), true)
+    assert.equal(isHostedServer('lid'), false)
+    assert.equal(isHostedDeviceId(99), true)
+    assert.equal(isHostedDeviceId(3), false)
+    assert.equal(isHostedDeviceJid('5511:99@hosted.lid'), true)
+    assert.equal(isHostedDeviceJid('5511:99@lid'), true)
+    assert.equal(isHostedDeviceJid('5511:1@lid'), false)
+
+    assert.equal(
+        buildDeviceJid('6116570308623', 'lid', 99, {
+            rawServer: 'hosted.lid',
+            isHosted: true
+        }),
+        '6116570308623:99@hosted.lid'
+    )
+    assert.equal(
+        buildDeviceJid('5511999999999', 's.whatsapp.net', 99, {
+            rawServer: 'hosted',
+            isHosted: true
+        }),
+        '5511999999999:99@hosted'
+    )
 })
 
 test('login identity parsing and protocol constants', () => {

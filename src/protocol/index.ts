@@ -1,6 +1,13 @@
 export * from '@protocol/constants'
 export {
+    buildDeviceJid,
+    canonicalizeSignalJid,
+    canonicalizeSignalServer,
+    canonicalizeSignalUserJid,
     getLoginIdentity,
+    isHostedDeviceId,
+    isHostedDeviceJid,
+    isHostedServer,
     isGroupJid,
     normalizeDeviceJid,
     normalizeRecipientJid,
