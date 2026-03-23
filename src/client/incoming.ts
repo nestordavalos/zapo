@@ -298,7 +298,11 @@ export function createIncomingGroupNotificationHandler(
                 reason: `notification.${WA_NOTIFICATION_TYPES.GROUP}.empty`
             })
         }
-        await sendSafeAck(options.logger, options.sendNode, buildNotificationAckNode(node))
+        await sendSafeAck(
+            options.logger,
+            options.sendNode,
+            buildNotificationAckNode(node, undefined, true)
+        )
         return true
     }
 }

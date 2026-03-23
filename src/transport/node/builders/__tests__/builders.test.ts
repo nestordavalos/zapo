@@ -494,6 +494,32 @@ test('pairing builders generate link-code nodes and ack helpers', () => {
     assert.equal(ackOverridden.attrs.type, 'custom')
     assert.equal('id' in ackOverridden.attrs, false)
 
+    const groupAckWithoutParticipant = buildNotificationAckNode({
+        tag: 'notification',
+        attrs: {
+            from: '12345@g.us',
+            type: 'w:gp2',
+            id: 'ack-2',
+            participant: '5511999999999@s.whatsapp.net'
+        }
+    })
+    assert.equal('participant' in groupAckWithoutParticipant.attrs, false)
+
+    const groupAckWithParticipant = buildNotificationAckNode(
+        {
+            tag: 'notification',
+            attrs: {
+                from: '12345@g.us',
+                type: 'w:gp2',
+                id: 'ack-3',
+                participant: '5511999999999@s.whatsapp.net'
+            }
+        },
+        undefined,
+        true
+    )
+    assert.equal(groupAckWithParticipant.attrs.participant, '5511999999999@s.whatsapp.net')
+
     const iqResultWithId = buildIqResultNode({
         tag: 'iq',
         attrs: { id: 'iq-1', from: 's.whatsapp.net' }

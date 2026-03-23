@@ -120,7 +120,11 @@ export function buildCompanionFinishRequestNode(args: {
     }
 }
 
-export function buildNotificationAckNode(node: BinaryNode, typeOverride?: string): BinaryNode {
+export function buildNotificationAckNode(
+    node: BinaryNode,
+    typeOverride?: string,
+    includeParticipant = false
+): BinaryNode {
     const attrs: Record<string, string> = {
         to: node.attrs.from ?? WA_DEFAULTS.HOST_DOMAIN,
         class: WA_NODE_TAGS.NOTIFICATION,
@@ -128,6 +132,9 @@ export function buildNotificationAckNode(node: BinaryNode, typeOverride?: string
     }
     if (node.attrs.id) {
         attrs.id = node.attrs.id
+    }
+    if (includeParticipant && node.attrs.participant) {
+        attrs.participant = node.attrs.participant
     }
     return {
         tag: WA_NODE_TAGS.ACK,
